@@ -106,15 +106,23 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                 logo.position.set(0, boxF.max.y - sizeF.y * 0.2, boxF.max.z - sizeF.z * 0.06);
                 obj.add(logo);
 
-                // Solid bölümlerden geçmeyi engellemek için yaklaşık çarpışma kutuları
-                // (merkez direk + sağ/sol ana taşıyıcılar). Kemer boşlukları açık kalır.
+                // Kapının gerçek bbox'una göre çarpışma kutuları üret.
+                // Böylece görünmez duvar/yanlış boşluk problemleri azalır.
                 if (Array.isArray(buildingAABBs)) {
-                    const hz = 1.3;
-                    buildingAABBs.push({ x0: -2.4, x1: 2.4, z0: GATE_Z - hz, z1: GATE_Z + hz });       // orta direk
-                    buildingAABBs.push({ x0: -13.2, x1: -9.5, z0: GATE_Z - hz, z1: GATE_Z + hz });      // sol taşıyıcı
-                    buildingAABBs.push({ x0: 9.5, x1: 13.2, z0: GATE_Z - hz, z1: GATE_Z + hz });        // sağ taşıyıcı
-                    buildingAABBs.push({ x0: -27.0, x1: -18.0, z0: GATE_Z - hz, z1: GATE_Z + hz });     // sol yan gövde
-                    buildingAABBs.push({ x0: 18.0, x1: 27.0, z0: GATE_Z - hz, z1: GATE_Z + hz });       // sağ yan gövde
+                    const depth = Math.max(1, sizeF.z);
+                    const hz = Math.max(0.7, Math.min(1.4, depth * 0.45));
+
+                    const xMin = boxF.min.x;
+                    const xMax = boxF.max.x;
+                    const xL = (t) => xMin + (xMax - xMin) * t;
+
+                    // Sol dış duvar, sol iç ayak, orta direk, sağ iç ayak, sağ dış duvar
+                    // Kapı kemer açıklıkları bilerek boş bırakılıyor.
+                    buildingAABBs.push({ x0: xL(0.00), x1: xL(0.13), z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    buildingAABBs.push({ x0: xL(0.27), x1: xL(0.38), z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    buildingAABBs.push({ x0: xL(0.46), x1: xL(0.54), z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    buildingAABBs.push({ x0: xL(0.62), x1: xL(0.73), z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    buildingAABBs.push({ x0: xL(0.87), x1: xL(1.00), z0: GATE_Z - hz, z1: GATE_Z + hz });
                 }
 
                 resolve(gateRoot);
