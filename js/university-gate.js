@@ -112,9 +112,18 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                 // [buyuk gecis] [ince duvar] [kucuk gecis] [kalın duvar]
                 if (Array.isArray(buildingAABBs)) {
                     const depth = Math.max(1, sizeF.z);
-                    const hz = Math.max(0.65, Math.min(1.35, depth * 0.46));
                     const cx = (boxF.min.x + boxF.max.x) * 0.5;
                     const halfW = sizeF.x * 0.5;
+                    const zMin = boxF.min.z;
+                    const zMax = boxF.max.z;
+                    const zLen = Math.max(0.5, zMax - zMin);
+
+                    // Duvar collider'larini bir miktar geriye al (one tasma sorununu azaltir).
+                    const zWall0 = zMin + zLen * 0.10;
+                    const zWall1 = zMin + zLen * 0.74;
+                    // Merkez cikinti icin one dogru ek parca.
+                    const zNose0 = zMin + zLen * 0.72;
+                    const zNose1 = zMax - zLen * 0.02;
 
                     const centerHalf = halfW * 0.08;
                     const bigOpening = halfW * 0.32;
@@ -131,11 +140,11 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                     const leftOuter1 = leftThin0 - smallOpening;
                     const leftOuter0 = cx - halfW;
 
-                    const pushWall = (x0, x1) => {
+                    const pushWall = (x0, x1, z0 = zWall0, z1 = zWall1) => {
                         const a = Math.max(boxF.min.x, Math.min(x0, x1));
                         const b = Math.min(boxF.max.x, Math.max(x0, x1));
                         if (b - a < 0.16) return;
-                        buildingAABBs.push({ x0: a, x1: b, z0: GATE_Z - hz, z1: GATE_Z + hz });
+                        buildingAABBs.push({ x0: a, x1: b, z0, z1 });
                     };
 
                     pushWall(cx - centerHalf, cx + centerHalf); // merkez duvar
@@ -143,6 +152,8 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                     pushWall(rightThin0, rightThin1); // sag ince duvar
                     pushWall(leftOuter0, leftOuter1); // sol kalin dis duvar
                     pushWall(rightOuter0, rightOuter1); // sag kalin dis duvar
+                    // Merkez duvarin one tasan cikintisi.
+                    pushWall(cx - centerHalf * 1.05, cx + centerHalf * 1.05, zNose0, zNose1);
                 }
 
                 resolve(gateRoot);
