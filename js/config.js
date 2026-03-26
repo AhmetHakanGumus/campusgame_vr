@@ -16,6 +16,17 @@ export const CFG = { walkSpeed: 6.5, npcSpeed: 1.9, npcCount: 18, camDist: 8.5, 
 export const DIALOGUES = ["Merhaba! 👋", "Bugün dersin var mı?", "Hocam çok anlatıyor...", "Kütüphaneye gidiyorum!", "Yemekhanede buluşalım!", "Sınavlar yaklaşıyor 😅", "Proje ödevim bitmedi!", "Harran'a hoş geldin! 🎓", "Nasılsın, iyi misin?", "Kampüs çok güzel değil mi?", "Şimdi derse gidiyorum.", "Bugün hava çok güzel!", "Bize katıl! 😄", "Koridorda görüşürüz!", "Ödev teslimi yarın...", "Ring yine mi dolu!"];
 
 export const BUILDINGS = [
+    {
+        x: 0,
+        z: 98, // Harran Kapısı'nın arkasındaki boşluk
+        w: 10,
+        h: 10,
+        d: 6,
+        color: 0xc9b08a,
+        css: '#c9b08a',
+        name: 'Anıt',
+        kind: 'monument'
+    },
     { x: 0, z: -62, w: 42, h: 19, d: 22, color: 0xc9986a, css: '#c9986a', name: "Ana Bina" },
     { x: -56, z: -46, w: 29, h: 15, d: 19, color: 0x6a8faf, css: '#6a8faf', name: "Kütüphane" },
     { x: 56, z: -46, w: 29, h: 15, d: 19, color: 0x6a8faf, css: '#6a8faf', name: "Mühendislik Fak." },
@@ -27,6 +38,17 @@ export const BUILDINGS = [
     { x: -30, z: -87, w: 19, h: 11, d: 15, color: 0x7aaac4, css: '#7aaac4', name: "Spor Salonu (BESYO)" },
     { x: 30, z: -87, w: 19, h: 11, d: 15, color: 0x7aaac4, css: '#7aaac4', name: "Sağlık Merkezi" },
     { x: 0, z: -33, w: 12, h: 5, d: 12, color: 0xc4b08a, css: '#c4b08a', name: "Güvenlik" },
+    {
+        x: 76, // haritanın en sağına yakın
+        z: 40,
+        w: 22,
+        h: 24,
+        d: 22,
+        color: 0xe0b24b,
+        css: '#e0b24b',
+        name: 'GAP YENEV',
+        kind: 'gap_yenev'
+    }
 ];
 
 export const SPOTS = [

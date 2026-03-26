@@ -11,6 +11,7 @@ import { G } from './runtime.js';
 import { addUniversityMainGate, updateUniversityGateAnimations } from './university-gate.js';
 import { getLeaderboard, saveScore, getRank } from './api.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+import { addGapYenev, addMonument } from './custom-buildings.js';
 
 applyPlatformDom();
 
@@ -418,14 +419,38 @@ applyPlatformDom();
 
         function addPlane(x, z, w, d, mat, dy = 0) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, dy, z); scene.add(m); }
 
-        function addBuilding({ x, z, w, h, d, color }) {
-            const mat = new THREE.MeshLambertMaterial({ color });
-            const body = bx(w, h, d, mat); body.position.set(x, h / 2, z); body.castShadow = body.receiveShadow = !IS_MOB; scene.add(body);
-            const roof = bx(w + .6, .8, d + .6, new THREE.MeshLambertMaterial({ color: dk(color, .7) })); roof.position.set(x, h + .4, z); scene.add(roof);
-            const wm = new THREE.MeshLambertMaterial({ color: 0x9ecae1, transparent: true, opacity: .85 });
-            const cols = Math.max(2, Math.floor(w / 5)), rows = Math.max(1, Math.floor(h / 4));
-            for (let r = 0; r < rows; r++)for (let c = 0; c < cols; c++) { const w2 = bx(1.5, 1.2, .12, wm); w2.position.set(x + (c - (cols - 1) / 2) * (w / cols), 2 + r * 3.3, z + d / 2 + .07); scene.add(w2); }
-            const door = bx(2.2, 3.2, .15, new THREE.MeshLambertMaterial({ color: dk(color, .5) })); door.position.set(x, 1.6, z + d / 2 + .08); scene.add(door);
+        function addBuilding(b) {
+            const { x, z, w, h, d, color, kind } = b;
+            if (kind === 'gap_yenev') {
+                addGapYenev({ scene, x, z, w, h, d, color, IS_MOB });
+            } else if (kind === 'monument') {
+                addMonument({ scene, x, z, w, h, d, color, IS_MOB });
+            } else {
+                const mat = new THREE.MeshLambertMaterial({ color });
+                const body = bx(w, h, d, mat);
+                body.position.set(x, h / 2, z);
+                body.castShadow = body.receiveShadow = !IS_MOB;
+                scene.add(body);
+
+                const roof = bx(w + 0.6, 0.8, d + 0.6, new THREE.MeshLambertMaterial({ color: dk(color, 0.7) }));
+                roof.position.set(x, h + 0.4, z);
+                scene.add(roof);
+
+                const wm = new THREE.MeshLambertMaterial({ color: 0x9ecae1, transparent: true, opacity: 0.85 });
+                const cols = Math.max(2, Math.floor(w / 5)),
+                    rows = Math.max(1, Math.floor(h / 4));
+                for (let r = 0; r < rows; r++)
+                    for (let c = 0; c < cols; c++) {
+                        const w2 = bx(1.5, 1.2, 0.12, wm);
+                        w2.position.set(x + (c - (cols - 1) / 2) * (w / cols), 2 + r * 3.3, z + d / 2 + 0.07);
+                        scene.add(w2);
+                    }
+
+                const door = bx(2.2, 3.2, 0.15, new THREE.MeshLambertMaterial({ color: dk(color, 0.5) }));
+                door.position.set(x, 1.6, z + d / 2 + 0.08);
+                scene.add(door);
+            }
+
             buildingAABBs.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
         }
 
