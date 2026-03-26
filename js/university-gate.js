@@ -114,16 +114,14 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                     const depth = Math.max(1, sizeF.z);
                     const cx = (boxF.min.x + boxF.max.x) * 0.5;
                     const halfW = sizeF.x * 0.5;
-                    const zMin = boxF.min.z;
-                    const zMax = boxF.max.z;
-                    const zLen = Math.max(0.5, zMax - zMin);
+                    const zHalf = depth * 0.5;
 
-                    // Duvar collider'larini bir miktar geriye al (one tasma sorununu azaltir).
-                    const zWall0 = zMin + zLen * 0.10;
-                    const zWall1 = zMin + zLen * 0.74;
-                    // Merkez cikinti icin one dogru ek parca.
-                    const zNose0 = zMin + zLen * 0.72;
-                    const zNose1 = zMax - zLen * 0.02;
+                    // Z ekseninde local/world kayma olmamasi icin GATE_Z merkezli hesapla.
+                    // Ana duvarlar biraz geride, merkez cikinti ise one dogru uzansin.
+                    const zWall0 = GATE_Z - zHalf * 0.92;
+                    const zWall1 = GATE_Z + zHalf * 0.26;
+                    const zNose0 = GATE_Z + zHalf * 0.18;
+                    const zNose1 = GATE_Z + zHalf * 0.92;
 
                     const centerHalf = halfW * 0.08;
                     const bigOpening = halfW * 0.32;
