@@ -106,23 +106,43 @@ export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
                 logo.position.set(0, boxF.max.y - sizeF.y * 0.2, boxF.max.z - sizeF.z * 0.06);
                 obj.add(logo);
 
-                // Kapının gerçek bbox'una göre çarpışma kutuları üret.
-                // Böylece görünmez duvar/yanlış boşluk problemleri azalır.
+                // Kullanıcı tarifine göre kapıyı 5 duvar + 4 geçiş olarak ayır:
+                // [kalın duvar] [kucuk gecis] [ince duvar] [buyuk gecis]
+                // [merkez duvar]
+                // [buyuk gecis] [ince duvar] [kucuk gecis] [kalın duvar]
                 if (Array.isArray(buildingAABBs)) {
                     const depth = Math.max(1, sizeF.z);
-                    const hz = Math.max(0.7, Math.min(1.4, depth * 0.45));
+                    const hz = Math.max(0.65, Math.min(1.35, depth * 0.46));
+                    const cx = (boxF.min.x + boxF.max.x) * 0.5;
+                    const halfW = sizeF.x * 0.5;
 
-                    const xMin = boxF.min.x;
-                    const xMax = boxF.max.x;
-                    const xL = (t) => xMin + (xMax - xMin) * t;
+                    const centerHalf = halfW * 0.08;
+                    const bigOpening = halfW * 0.32;
+                    const thinWall = halfW * 0.12;
+                    const smallOpening = halfW * 0.20;
 
-                    // Sol dış duvar, sol iç ayak, orta direk, sağ iç ayak, sağ dış duvar
-                    // Kapı kemer açıklıkları bilerek boş bırakılıyor.
-                    buildingAABBs.push({ x0: xL(0.00), x1: xL(0.13), z0: GATE_Z - hz, z1: GATE_Z + hz });
-                    buildingAABBs.push({ x0: xL(0.27), x1: xL(0.38), z0: GATE_Z - hz, z1: GATE_Z + hz });
-                    buildingAABBs.push({ x0: xL(0.46), x1: xL(0.54), z0: GATE_Z - hz, z1: GATE_Z + hz });
-                    buildingAABBs.push({ x0: xL(0.62), x1: xL(0.73), z0: GATE_Z - hz, z1: GATE_Z + hz });
-                    buildingAABBs.push({ x0: xL(0.87), x1: xL(1.00), z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    const rightThin0 = cx + centerHalf + bigOpening;
+                    const rightThin1 = rightThin0 + thinWall;
+                    const rightOuter0 = rightThin1 + smallOpening;
+                    const rightOuter1 = cx + halfW;
+
+                    const leftThin1 = cx - centerHalf - bigOpening;
+                    const leftThin0 = leftThin1 - thinWall;
+                    const leftOuter1 = leftThin0 - smallOpening;
+                    const leftOuter0 = cx - halfW;
+
+                    const pushWall = (x0, x1) => {
+                        const a = Math.max(boxF.min.x, Math.min(x0, x1));
+                        const b = Math.min(boxF.max.x, Math.max(x0, x1));
+                        if (b - a < 0.16) return;
+                        buildingAABBs.push({ x0: a, x1: b, z0: GATE_Z - hz, z1: GATE_Z + hz });
+                    };
+
+                    pushWall(cx - centerHalf, cx + centerHalf); // merkez duvar
+                    pushWall(leftThin0, leftThin1); // sol ince duvar
+                    pushWall(rightThin0, rightThin1); // sag ince duvar
+                    pushWall(leftOuter0, leftOuter1); // sol kalin dis duvar
+                    pushWall(rightOuter0, rightOuter1); // sag kalin dis duvar
                 }
 
                 resolve(gateRoot);
