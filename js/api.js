@@ -1,12 +1,14 @@
 'use strict';
 
-// Vite dev sunucusu `/api` isteklerini backend'e proxy'lediği için
-// fallback'te aynı origin'e istek atmak yeterli olur.
-// (Production'da gerekiyorsa VITE_API_BASE ile tam URL verilebilir.)
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+function normalizeApiPath(path) {
+    const clean = String(path || '').trim();
+    if (clean.startsWith('/api/')) return clean;
+    if (clean.startsWith('/')) return `/api${clean}`;
+    return `/api/${clean}`;
+}
 
 async function jsonFetch(path, options = {}) {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(normalizeApiPath(path), {
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
         ...options
     });
