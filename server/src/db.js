@@ -7,10 +7,10 @@ const { Pool } = pg;
 
 function getPoolConfig() {
     if (process.env.DATABASE_URL) {
-        const ssl =
-            process.env.PGSSLMODE === 'require'
-                ? { rejectUnauthorized: false }
-                : undefined;
+        const mode = String(process.env.PGSSLMODE || '').trim().toLowerCase();
+        const shouldUseSsl =
+            mode === 'require' || /supabase\.co/i.test(process.env.DATABASE_URL);
+        const ssl = shouldUseSsl ? { rejectUnauthorized: false } : undefined;
         return { connectionString: process.env.DATABASE_URL, ssl };
     }
 

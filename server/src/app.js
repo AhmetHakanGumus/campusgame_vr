@@ -30,7 +30,13 @@ app.use('/api/leaderboard', leaderboardRoutes);
 
 let _initPromise;
 export function ensureDatabaseReady() {
-    if (!_initPromise) _initPromise = initDatabase();
+    if (!_initPromise) {
+        _initPromise = initDatabase().catch((error) => {
+            // Allow retries on subsequent requests if first init fails.
+            _initPromise = null;
+            throw error;
+        });
+    }
     return _initPromise;
 }
 
