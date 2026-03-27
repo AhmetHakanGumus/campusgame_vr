@@ -833,20 +833,36 @@ applyPlatformDom();
             vrChess.highlight.visible = true;
         }
 
-        /** Kontrolcü ışını ile tahta karesi (karo mesh'lerine raycast) */
+        /** Kontrolcü ışını ile tahta karesi (önce karolar, yoksa tahta düzlemi) */
         function squareFromControllerRay(ctrl) {
             if (!vrChess || !ctrl || !xrRaycaster) return null;
-            const tiles = Array.from(vrChess.squares.values());
-            if (!tiles.length) return null;
             const origin = new THREE.Vector3();
             const dir = new THREE.Vector3();
             ctrl.getWorldPosition(origin);
             ctrl.getWorldDirection(dir);
-            dir.negate();
-            xrRaycaster.set(origin, dir);
-            const hits = xrRaycaster.intersectObjects(tiles, false);
-            if (!hits.length) return null;
-            return nearestSqFromWorld(hits[0].point);
+            dir.negate().normalize();
+
+            const tiles = Array.from(vrChess.squares.values());
+            if (tiles.length) {
+                xrRaycaster.set(origin, dir);
+                const hits = xrRaycaster.intersectObjects(tiles, false);
+                if (hits.length) {
+                    const sq = nearestSqFromWorld(hits[0].point);
+                    if (sq) return sq;
+                }
+            }
+
+            const root = vrChess.root;
+            const coplanar = new THREE.Vector3();
+            root.localToWorld(new THREE.Vector3(0, vrChess.boardY, 0), coplanar);
+            const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(root.quaternion).normalize();
+            const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, coplanar);
+            const hit = new THREE.Vector3();
+            const ray = new THREE.Ray(origin, dir);
+            if (ray.intersectPlane(plane, hit) !== null) {
+                return nearestSqFromWorld(hit);
+            }
+            return null;
         }
 
         /** Tetik: önce sıradaki taşın karesi, sonra hedef kare (aynı kare = iptal) */

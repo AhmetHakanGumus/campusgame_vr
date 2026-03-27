@@ -37,21 +37,20 @@ export class ChessGame {
         this.boardPx = this.squareSize * 8;
         this.offX = (this.W - this.boardPx) * 0.5;
         this.offY = (this.H - this.boardPx) * 0.5;
-        this._mm = (e) => this.onPointerMove(e);
-        this._md = (e) => this.onPointerDown(e);
-        this._mu = (e) => this.onPointerUp(e);
-        this._ts = (e) => this.onTouchStart(e);
-        this._tm = (e) => this.onTouchMove(e);
-        this._te = (e) => this.onTouchEnd(e);
+        this._pd = (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            e.preventDefault();
+            this.onPointerDown(e);
+        };
+        this._pm = (e) => this.onPointerMove(e);
+        this._pu = (e) => this.onPointerUp(e);
     }
 
     start() {
-        this.canvas.addEventListener('mousedown', this._md);
-        this.canvas.addEventListener('mousemove', this._mm);
-        document.addEventListener('mouseup', this._mu);
-        this.canvas.addEventListener('touchstart', this._ts, { passive: false });
-        this.canvas.addEventListener('touchmove', this._tm, { passive: false });
-        this.canvas.addEventListener('touchend', this._te, { passive: false });
+        this.canvas.addEventListener('pointerdown', this._pd, { passive: false });
+        this.canvas.addEventListener('pointermove', this._pm);
+        window.addEventListener('pointerup', this._pu);
+        window.addEventListener('pointercancel', this._pu);
 
         if (this.mode === 'pvp' && this.mp?.joinChess) {
             this.mp.joinChess();
@@ -60,12 +59,10 @@ export class ChessGame {
     }
 
     destroy() {
-        this.canvas.removeEventListener('mousedown', this._md);
-        this.canvas.removeEventListener('mousemove', this._mm);
-        document.removeEventListener('mouseup', this._mu);
-        this.canvas.removeEventListener('touchstart', this._ts);
-        this.canvas.removeEventListener('touchmove', this._tm);
-        this.canvas.removeEventListener('touchend', this._te);
+        this.canvas.removeEventListener('pointerdown', this._pd);
+        this.canvas.removeEventListener('pointermove', this._pm);
+        window.removeEventListener('pointerup', this._pu);
+        window.removeEventListener('pointercancel', this._pu);
     }
 
     onChessReady(payload) {
@@ -135,7 +132,8 @@ export class ChessGame {
 
     tryMove(toSquare) {
         if (!this.dragFrom) return false;
-        if (!toSquare || toSquare === this.dragFrom) {
+        if (!toSquare) return false;
+        if (toSquare === this.dragFrom) {
             cancelDragState(this);
             return false;
         }
@@ -180,7 +178,12 @@ export class ChessGame {
 
     getPointerPos(e) {
         const r = this.canvas.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
+        const sx = this.W / Math.max(r.width, 1e-6);
+        const sy = this.H / Math.max(r.height, 1e-6);
+        return {
+            x: (e.clientX - r.left) * sx,
+            y: (e.clientY - r.top) * sy
+        };
     }
     onPointerMove(e) {
         const p = this.getPointerPos(e);
@@ -221,25 +224,12 @@ export class ChessGame {
             this.dragging = false;
             return;
         }
+        // Tahta dışında bırakıldı: seçim kalsın (ikinci tıklama hâlâ geçerli)
+        if (!sq) {
+            this.dragging = false;
+            return;
+        }
         this.tryMove(sq);
-    }
-    onTouchStart(e) {
-        e.preventDefault();
-        const t = e.touches[0];
-        if (!t) return;
-        this.onPointerDown(t);
-    }
-    onTouchMove(e) {
-        e.preventDefault();
-        const t = e.touches[0];
-        if (!t) return;
-        this.onPointerMove(t);
-    }
-    onTouchEnd(e) {
-        e.preventDefault();
-        const t = e.changedTouches[0];
-        if (!t) return;
-        this.onPointerUp(t);
     }
 
     draw() {
