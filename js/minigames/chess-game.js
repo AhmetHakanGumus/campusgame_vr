@@ -11,6 +11,7 @@ function cancelDragState(self) {
     self.legalTargets = [];
 }
 
+/** local = aynı cihazda iki oyuncu (beyaz/siyah sırayla); pvp = çevrimiçi (socket) */
 export class ChessGame {
     constructor(canvas, W, H, done, opts = {}) {
         this.canvas = canvas;
@@ -18,8 +19,7 @@ export class ChessGame {
         this.W = W;
         this.H = H;
         this.done = done;
-        this.mode = opts.mode || 'ai'; // ai | pvp
-        this.aiLevel = opts.aiLevel || 'normal'; // easy | normal | hard
+        this.mode = opts.mode || 'local';
         this.localPlayerId = opts.localPlayerId || null;
         this.mp = opts.multiplayer || null;
         this.chess = new Chess();
@@ -83,7 +83,7 @@ export class ChessGame {
     onChessEnded() {
         if (this.gameOver) return;
         this.gameOver = true;
-        this.resultText = 'Rakip ayrildi';
+        this.resultText = 'Rakip ayrıldı';
         setTimeout(() => this.done(0), 1200);
     }
 
@@ -114,7 +114,7 @@ export class ChessGame {
 
     canInteract() {
         if (this.gameOver) return false;
-        if (this.mode === 'ai') return this.chess.turn() === 'w';
+        if (this.mode === 'local') return true;
         if (this.waitingOpponent) return false;
         return this.chess.turn() === this.side;
     }
@@ -134,7 +134,6 @@ export class ChessGame {
 
     tryMove(toSquare) {
         if (!this.dragFrom) return false;
-        // Tahta dışı bırakma veya aynı kare: hamle yok, sürüklemeyi iptal et
         if (!toSquare || toSquare === this.dragFrom) {
             cancelDragState(this);
             return false;
@@ -162,24 +161,19 @@ export class ChessGame {
             if (this.chess.isCheckmate()) {
                 const loser = this.chess.turn();
                 const winner = loser === 'w' ? 'b' : 'w';
-                const humanWon = this.mode === 'ai' ? winner === 'w' : winner === this.side;
-                score = humanWon ? 50 : 0;
-                this.resultText = humanWon ? 'Mat! +50 puan' : 'Mat oldun';
+                if (this.mode === 'local') {
+                    this.resultText = winner === 'w' ? 'Mat! Beyaz kazandı' : 'Mat! Siyah kazandı';
+                    score = 50;
+                } else {
+                    const humanWon = winner === this.side;
+                    score = humanWon ? 50 : 0;
+                    this.resultText = humanWon ? 'Mat! +50 puan' : 'Mat oldun';
+                }
             } else {
                 this.resultText = 'Berabere';
             }
             setTimeout(() => this.done(score), 1400);
             return;
-        }
-        if (this.mode === 'ai' && this.chess.turn() === 'b') {
-            setTimeout(() => {
-                if (this.gameOver) return;
-                const moves = this.chess.moves({ verbose: true });
-                if (!moves.length) return this.postMove();
-                const mv = pickAiMove(this.chess, moves, this.aiLevel);
-                this.chess.move({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
-                this.postMove();
-            }, 350);
         }
     }
 
@@ -200,7 +194,6 @@ export class ChessGame {
         if (!this.dragging) return;
         const p = this.getPointerPos(e);
         let sq = this.pointToSquare(p.x, p.y);
-        // Fare tahta dışında bırakıldıysa son geçerli hover karesini dene (dar pencerede jitter)
         if (!sq && this.hoverSq && this.legalTargets.includes(this.hoverSq)) {
             sq = this.hoverSq;
         }
@@ -238,7 +231,6 @@ export class ChessGame {
             }
         }
 
-        // hover square (VR'da hedef kare algısı için de kullanılabilir)
         if (this.hoverSq) {
             const p = this.squareToCenter(this.hoverSq);
             c.fillStyle = 'rgba(80,160,255,.25)';
@@ -250,7 +242,6 @@ export class ChessGame {
             );
         }
 
-        // legal target dots while holding
         if (this.dragging && this.legalTargets.length) {
             c.fillStyle = 'rgba(20, 30, 45, .5)';
             this.legalTargets.forEach((sq) => {
@@ -288,54 +279,18 @@ export class ChessGame {
         c.fillStyle = '#e8f0ff';
         c.font = `${Math.max(14, this.H * 0.042)}px Inter,Arial`;
         c.textAlign = 'left';
-        c.fillText(
-            this.mode === 'ai'
-                ? `Sıra: ${this.chess.turn() === 'w' ? 'Sen' : 'Bilgisayar'}`
-                : this.waitingOpponent
-                    ? 'Rakip bekleniyor...'
-                    : `Sıra: ${this.chess.turn() === this.side ? 'Sen' : 'Rakip'}`,
-            12,
-            24
-        );
+        let turnLine = '';
+        if (this.mode === 'local') {
+            turnLine = this.chess.turn() === 'w' ? 'Sıra: Beyaz' : 'Sıra: Siyah';
+        } else if (this.waitingOpponent) {
+            turnLine = 'Rakip bekleniyor...';
+        } else {
+            turnLine = `Sıra: ${this.chess.turn() === this.side ? 'Sen' : 'Rakip'}`;
+        }
+        c.fillText(turnLine, 12, 24);
         if (this.resultText) {
             c.fillStyle = '#ffd86a';
             c.fillText(this.resultText, 12, 50);
         }
     }
 }
-
-function pickAiMove(chess, moves, level) {
-    if (!moves?.length) return null;
-    if (level === 'easy') return moves[Math.floor(Math.random() * moves.length)];
-
-    const pieceValue = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
-    let best = moves[0];
-    let bestScore = -Infinity;
-
-    for (const m of moves) {
-        let score = 0;
-        if (m.captured) score += pieceValue[m.captured] || 0;
-        if (m.promotion) score += 8;
-
-        if (level === 'hard') {
-            const snap = new Chess(chess.fen());
-            snap.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
-            if (snap.isCheckmate()) score += 1000;
-            if (snap.inCheck()) score += 2;
-            const reply = snap.moves({ verbose: true });
-            if (reply?.length) {
-                // Opponent best capture potential (minimize this risk).
-                let worst = 0;
-                for (const r of reply) worst = Math.max(worst, pieceValue[r.captured] || 0);
-                score -= worst * 0.8;
-            }
-        }
-
-        if (score > bestScore || (score === bestScore && Math.random() > 0.5)) {
-            bestScore = score;
-            best = m;
-        }
-    }
-    return best;
-}
-

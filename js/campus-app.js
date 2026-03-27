@@ -165,7 +165,7 @@ applyPlatformDom();
                 document.getElementById('interact-prompt').style.display = 'none';
                 if (activeSpot.game === 'ch') {
                     if (xrActive) return;
-                    openChessModeMenu(activeSpot);
+                    startGame('ch', activeSpot.id, activeSpot.title, { mode: 'local' });
                     return;
                 }
                 startGame(activeSpot.game, activeSpot.id, activeSpot.title);
@@ -464,11 +464,9 @@ applyPlatformDom();
                 const piece = vrChess.game.get(from);
                 if (!piece) return;
                 // AI modunda oyuncu sadece beyaz oynar.
-                if (vrChess.mode === 'ai' && piece.color !== 'w') return;
-                if (vrChess.mode === 'ai' && vrChess.game.turn() !== 'w') return;
                 if (piece.color !== vrChess.game.turn()) return;
-                if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
                 if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
+                if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
                 const moves = vrChess.game.moves({ square: from, verbose: true }) || [];
                 heldData = { from, moves: moves.map((m) => m.to) };
             }
@@ -488,7 +486,11 @@ applyPlatformDom();
         function releaseGrabbedObject(handedness) {
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
-            scene.attach(grabbed);
+            if (grabbed.userData?.vrChessPiece && vrChess?.root) {
+                vrChess.root.attach(grabbed);
+            } else {
+                scene.attach(grabbed);
+            }
             // Kontrolcü dönüşü taşa yansımasın — tahta üzerinde dik dursun
             if (grabbed.userData?.vrChessPiece) {
                 grabbed.rotation.set(0, 0, 0);
@@ -564,7 +566,7 @@ applyPlatformDom();
             return g;
         }
 
-        function createVrChess(mode = 'ai', aiLevel = 'normal') {
+        function createVrChess(mode = 'local') {
             const spot = SPOTS.find((s) => s.game === 'ch')?.pos || { x: 10, z: 42 };
             const root = new THREE.Group();
             // Tahtayı masanın üstüne al
@@ -614,7 +616,6 @@ applyPlatformDom();
             const state = {
                 root,
                 mode,
-                aiLevel,
                 game: new Chess(),
                 side: 'w',
                 waitingOpponent: mode === 'pvp',
@@ -755,7 +756,7 @@ applyPlatformDom();
                     mv = null;
                 }
                 moved = !!mv;
-                if (moved && mpClient && currentGame?.mode === 'pvp') {
+                if (moved && mpClient && vrChess.mode === 'pvp') {
                     mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
                 }
             }
@@ -772,76 +773,6 @@ applyPlatformDom();
                 endGame(vrChess.game.isCheckmate() ? 50 : 0);
                 return;
             }
-            maybeRunVrChessAi();
-        }
-
-        function maybeRunVrChessAi() {
-            if (!vrChess || vrChess.mode !== 'ai') return;
-            if (vrChess.game.isGameOver()) return;
-            if (vrChess.game.turn() !== 'b') return;
-            if (vrChess.aiPending) return;
-            vrChess.aiPending = true;
-            const run = () => {
-                if (!vrChess || vrChess.mode !== 'ai' || vrChess.game.isGameOver()) return;
-                if (vrChess.game.turn() !== 'b') return;
-                const moves = vrChess.game.moves({ verbose: true }) || [];
-                if (!moves.length) return endGame(0);
-                const m = pickAiMoveByLevel(vrChess.game, moves, vrChess.aiLevel);
-                if (!m) return endGame(0);
-                vrChess.game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
-                rebuildVrChessPieces();
-                if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
-            };
-            // rAF: XR oturumunda setTimeout gecikmesi/askıya alma riskine karşı
-            requestAnimationFrame(() => {
-                try {
-                    run();
-                } finally {
-                    if (vrChess) vrChess.aiPending = false;
-                }
-            });
-            setTimeout(() => {
-                if (!vrChess) return;
-                if (vrChess.game.isGameOver()) return;
-                if (vrChess.game.turn() !== 'b') return;
-                if (vrChess.aiPending) return;
-                vrChess.aiPending = true;
-                try {
-                    run();
-                } finally {
-                    if (vrChess) vrChess.aiPending = false;
-                }
-            }, 420);
-        }
-
-        function pickAiMoveByLevel(game, moves, level) {
-            if (!moves?.length) return null;
-            if (level === 'easy') return moves[Math.floor(Math.random() * moves.length)];
-            const val = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
-            let best = moves[0];
-            let bestScore = -Infinity;
-            for (const m of moves) {
-                let score = 0;
-                if (m.captured) score += val[m.captured] || 0;
-                if (m.promotion) score += 8;
-                if (level === 'hard') {
-                    const snap = new Chess(game.fen());
-                    snap.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
-                    if (snap.isCheckmate()) score += 1000;
-                    if (snap.inCheck()) score += 2;
-                    const replies = snap.moves({ verbose: true });
-                    if (replies?.length) {
-                        let worst = 0;
-                        for (const r of replies) worst = Math.max(worst, val[r.captured] || 0);
-                        score -= worst * 0.8;
-                    }
-                }
-                if (score > bestScore || (score === bestScore && Math.random() > 0.5)) {
-                    bestScore = score;
-                    best = m;
-                }
-            }
-            return best;
         }
 
         /* VR sırasında HTML UI'ı gizle/göster */
@@ -1408,7 +1339,7 @@ applyPlatformDom();
                 document.getElementById('interact-prompt').style.display = 'none';
                 if (activeSpot.game === 'ch') {
                     if (isLocked && document.exitPointerLock) document.exitPointerLock();
-                    openChessModeMenu(activeSpot);
+                    startGame('ch', activeSpot.id, activeSpot.title, { mode: 'local' });
                     return;
                 }
                 if (isLocked && document.exitPointerLock) document.exitPointerLock();
@@ -1675,14 +1606,7 @@ applyPlatformDom();
             vrChessUiGroup = new THREE.Group();
             vrChessUiGroup.visible = false;
             scene.add(vrChessUiGroup);
-            vrChessUiButtons = [
-                makeVrUiButton('Satranc Oyna', 'open-menu', 0.35),
-                makeVrUiButton('Oyuncuya Karsi', 'pvp', 0.12),
-                makeVrUiButton('Bilgisayara Karsi', 'ai-menu', -0.10),
-                makeVrUiButton('Kolay', 'ai-easy', -0.30),
-                makeVrUiButton('Orta', 'ai-normal', -0.50),
-                makeVrUiButton('Zor', 'ai-hard', -0.70)
-            ];
+            vrChessUiButtons = [makeVrUiButton('Satranc Oyna', 'start-local', 0.35)];
             vrChessUiButtons.forEach((b) => vrChessUiGroup.add(b));
             setVrChessUiMode('play');
         }
@@ -1690,11 +1614,7 @@ applyPlatformDom();
         function setVrChessUiMode(mode) {
             if (!vrChessUiGroup) return;
             if (mode === 'play') {
-                vrChessUiButtons.forEach((b, i) => (b.visible = i === 0));
-            } else if (mode === 'mode') {
-                vrChessUiButtons.forEach((b, i) => (b.visible = i === 1 || i === 2));
-            } else if (mode === 'ai-level') {
-                vrChessUiButtons.forEach((b, i) => (b.visible = i >= 3));
+                vrChessUiButtons.forEach((b) => (b.visible = true));
             } else {
                 vrChessUiButtons.forEach((b) => (b.visible = false));
             }
@@ -1742,27 +1662,9 @@ applyPlatformDom();
         function handleVrChessUiSelect() {
             if (!xrActive || !vrChessUiGroup?.visible || !vrChessUiHover || !pendingChessSpot) return false;
             const action = vrChessUiHover.userData?.vrUiAction;
-            if (action === 'open-menu') {
-                setVrChessUiMode('mode');
-                return true;
-            }
-            if (action === 'pvp') {
-                if (!mpClient) {
-                    setVrChessUiMode('play');
-                    return true;
-                }
+            if (action === 'start-local') {
                 setVrChessUiMode('play');
-                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'pvp' });
-                return true;
-            }
-            if (action === 'ai-menu') {
-                setVrChessUiMode('ai-level');
-                return true;
-            }
-            if (action === 'ai-easy' || action === 'ai-normal' || action === 'ai-hard') {
-                const aiLevel = action.replace('ai-', '');
-                setVrChessUiMode('play');
-                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'ai', aiLevel });
+                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'local' });
                 return true;
             }
             return false;
@@ -1776,70 +1678,19 @@ applyPlatformDom();
                 'display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:1300;padding:12px 20px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(19,26,40,.92);color:#e8f0ff;font-weight:700;';
             btn.addEventListener('click', () => {
                 if (!pendingChessSpot) return;
-                openChessModeMenu(pendingChessSpot);
+                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'local' });
             });
             document.body.appendChild(btn);
             vrChessPlayBtn = btn;
 
-            const menu = document.createElement('div');
-            menu.id = 'chess-mode-menu';
-            menu.style.cssText =
-                'display:none;position:fixed;inset:0;z-index:1310;background:rgba(0,0,0,.62);';
-            menu.innerHTML = `
-                <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,460px);background:#141c2b;color:#e8f0ff;border:1px solid #2f3e5f;border-radius:12px;padding:14px;">
-                  <h3 style="margin:0 0 10px;">Satranç Modu</h3>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                    <button id="chess-vs-player">Oyuncuya karşı</button>
-                    <button id="chess-vs-ai">Bilgisayara karşı</button>
-                  </div>
-                  <div id="chess-ai-levels" style="display:none;gap:8px;flex-wrap:wrap;">
-                    <button data-ai-level="easy">Kolay</button>
-                    <button data-ai-level="normal">Orta</button>
-                    <button data-ai-level="hard">Zor</button>
-                  </div>
-                  <div style="margin-top:12px;">
-                    <button id="chess-mode-close">Vazgeç</button>
-                  </div>
-                </div>
-            `;
-            document.body.appendChild(menu);
-            chessModeMenu = menu;
-
-            menu.querySelector('#chess-vs-player')?.addEventListener('click', () => {
-                if (!pendingChessSpot) return;
-                closeChessModeMenu();
-                if (!mpClient) {
-                    alert('Oyuncuya karşı mod için online bağlantı gerekli.');
-                    return;
-                }
-                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'pvp' });
-            });
-            menu.querySelector('#chess-vs-ai')?.addEventListener('click', () => {
-                const levels = menu.querySelector('#chess-ai-levels');
-                if (levels) levels.style.display = 'flex';
-            });
-            menu.querySelectorAll('[data-ai-level]')?.forEach((el) => {
-                el.addEventListener('click', () => {
-                    if (!pendingChessSpot) return;
-                    const aiLevel = el.getAttribute('data-ai-level') || 'normal';
-                    closeChessModeMenu();
-                    startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'ai', aiLevel });
-                });
-            });
-            menu.querySelector('#chess-mode-close')?.addEventListener('click', () => closeChessModeMenu());
+            chessModeMenu = null;
         }
 
         function openChessModeMenu(spot) {
             pendingChessSpot = spot || pendingChessSpot;
-            if (!chessModeMenu) return;
-            const lv = chessModeMenu.querySelector('#chess-ai-levels');
-            if (lv) lv.style.display = 'none';
-            chessModeMenu.style.display = 'block';
         }
 
-        function closeChessModeMenu() {
-            if (chessModeMenu) chessModeMenu.style.display = 'none';
-        }
+        function closeChessModeMenu() {}
 
         function updateVrChessPlayButton() {
             if (!vrChessPlayBtn) return;
@@ -1923,14 +1774,14 @@ applyPlatformDom();
                         console.warn('Multiplayer auth error:', msg);
                     },
                     onChessReady: (payload) => {
-                        if (vrChess && currentGame?.mode === 'pvp') {
+                        if (vrChess && vrChess.mode === 'pvp') {
                             vrChess.waitingOpponent = false;
                             vrChess.side = payload?.whiteId === localPlayerId ? 'w' : 'b';
                         }
                         if (currentGame?.onChessReady) currentGame.onChessReady(payload);
                     },
                     onChessMove: (payload) => {
-                        if (vrChess && currentGame?.mode === 'pvp' && payload?.from && payload?.to) {
+                        if (vrChess && vrChess.mode === 'pvp' && payload?.from && payload?.to) {
                             vrChess.game.move({ from: payload.from, to: payload.to, promotion: payload.promotion || 'q' });
                             rebuildVrChessPieces();
                             if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
@@ -2098,11 +1949,9 @@ applyPlatformDom();
             else if (type === 'ok') currentGame = new Archery(canvas, W, H, endGame);
             else if (type === 'bk') currentGame = new Basketball(canvas, W, H, endGame);
             else if (type === 'ch' && !xrActive) {
-                const mode = options.mode || 'ai';
-                const aiLevel = options.aiLevel || 'normal';
+                const mode = options.mode || 'local';
                 currentGame = new ChessGame(canvas, W, H, endGame, {
                     mode,
-                    aiLevel,
                     localPlayerId,
                     multiplayer: mode === 'pvp' && mpClient
                         ? {
@@ -2112,13 +1961,12 @@ applyPlatformDom();
                         : null
                 });
             } else if (type === 'ch' && xrActive) {
-                const mode = options.mode || 'ai';
-                const aiLevel = options.aiLevel || 'normal';
+                const mode = options.mode || 'local';
                 try {
                     // Her başlangıçta temiz kurulum
                     clearVrChess();
                     currentGame = { mode, destroy() {} };
-                    createVrChess(mode, aiLevel);
+                    createVrChess(mode);
                     if (mode === 'pvp') mpClient?.joinChess?.();
                     G.gameRunning = true;
                 } catch (err) {
