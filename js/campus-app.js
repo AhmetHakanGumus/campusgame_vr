@@ -442,7 +442,7 @@ applyPlatformDom();
             if (handedness === 'right' && xrGrabbedRight) return;
             const origin = new THREE.Vector3();
             ctrl.getWorldPosition(origin);
-            let best = null, bestDist = 1.15;
+            let best = null, bestDist = vrChess ? 1.7 : 1.15;
             vrGrabbables.forEach((o) => {
                 const wp = new THREE.Vector3();
                 o.getWorldPosition(wp);
@@ -629,9 +629,10 @@ applyPlatformDom();
                     const mesh = makeVrChessPieceMesh(piece);
                     const p = sqToWorld(sq);
                     mesh.position.copy(p);
+                    mesh.position.y = vrChess.root.position.y + 0.12;
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
-                    scene.add(mesh);
+                    vrChess.root.add(mesh);
                     vrChess.pieces.set(sq, mesh);
                 }
             }
@@ -672,8 +673,8 @@ applyPlatformDom();
             targetSquares.forEach((sq) => {
                 const p = sqToWorld(sq);
                 const dot = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 10), new THREE.MeshBasicMaterial({ color: 0x1f2f44, transparent: true, opacity: 0.8 }));
-                dot.position.set(p.x, vrChess.root.position.y + 0.015, p.z);
-                scene.add(dot);
+                dot.position.set(p.x - vrChess.root.position.x, 0.015, p.z - vrChess.root.position.z);
+                vrChess.root.add(dot);
                 vrChess.markers.push(dot);
             });
         }
