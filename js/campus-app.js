@@ -459,6 +459,9 @@ applyPlatformDom();
                 const from = best.userData.vrChessPiece;
                 const piece = vrChess.game.get(from);
                 if (!piece) return;
+                // AI modunda oyuncu sadece beyaz oynar.
+                if (vrChess.mode === 'ai' && piece.color !== 'w') return;
+                if (vrChess.mode === 'ai' && vrChess.game.turn() !== 'w') return;
                 if (piece.color !== vrChess.game.turn()) return;
                 if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
                 if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
@@ -736,20 +739,24 @@ applyPlatformDom();
                 endGame(score);
                 return;
             }
-            if (vrChess.mode === 'ai' && vrChess.game.turn() === 'b') {
-                setTimeout(() => {
-                    if (!vrChess || vrChess.game.isGameOver()) return;
-                    const moves = vrChess.game.moves({ verbose: true });
-                    if (!moves.length) return endGame(0);
-                    const m = pickAiMoveByLevel(vrChess.game, moves, vrChess.aiLevel);
-                    vrChess.game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
-                    rebuildVrChessPieces();
-                    if (vrChess.game.isGameOver()) {
-                        const score = vrChess.game.isCheckmate() ? 50 : 0;
-                        endGame(score);
-                    }
-                }, 380);
-            }
+            maybeRunVrChessAi();
+        }
+
+        function maybeRunVrChessAi() {
+            if (!vrChess || vrChess.mode !== 'ai') return;
+            if (vrChess.game.isGameOver()) return;
+            if (vrChess.game.turn() !== 'b') return;
+            setTimeout(() => {
+                if (!vrChess || vrChess.mode !== 'ai' || vrChess.game.isGameOver()) return;
+                if (vrChess.game.turn() !== 'b') return;
+                const moves = vrChess.game.moves({ verbose: true }) || [];
+                if (!moves.length) return endGame(0);
+                const m = pickAiMoveByLevel(vrChess.game, moves, vrChess.aiLevel);
+                if (!m) return endGame(0);
+                vrChess.game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+                rebuildVrChessPieces();
+                if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
+            }, 380);
         }
 
         function pickAiMoveByLevel(game, moves, level) {
