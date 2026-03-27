@@ -485,8 +485,12 @@ applyPlatformDom();
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
             scene.attach(grabbed);
-            if (vrChess && grabbed.userData?.vrChessPiece && vrChess.held?.mesh === grabbed) {
-                onVrChessDrop(grabbed);
+            if (vrChess && vrChess.held?.mesh === grabbed) onVrChessDrop(grabbed);
+            // Drop çalışmasa bile marker'lar kalmasın.
+            if (vrChess && vrChess.held?.hand === handedness) {
+                vrChess.held = null;
+                setVrChessMarkers([]);
+                setVrChessSquareHighlight(null);
             }
             if (handedness === 'left') xrGrabbedLeft = null;
             else xrGrabbedRight = null;
@@ -567,7 +571,7 @@ applyPlatformDom();
             const markers = [];
             const markerMat = new THREE.MeshBasicMaterial({ color: 0x21354d, transparent: true, opacity: 0.72 });
             const boardY = 0.015;
-            const pieceY = 0.060;
+            const pieceY = 0.40;
             const highlight = new THREE.Mesh(
                 new THREE.PlaneGeometry(sqSize * 0.92, sqSize * 0.92),
                 new THREE.MeshBasicMaterial({ color: 0x4ca4ff, transparent: true, opacity: 0.36, side: THREE.DoubleSide })
