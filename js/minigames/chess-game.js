@@ -3,6 +3,14 @@
 import { Chess } from 'chess.js';
 import { G } from '../runtime.js';
 
+function cancelDragState(self) {
+    self.dragging = false;
+    self.dragFrom = null;
+    self.dragPiece = null;
+    self.selected = null;
+    self.legalTargets = [];
+}
+
 export class ChessGame {
     constructor(canvas, W, H, done, opts = {}) {
         this.canvas = canvas;
@@ -125,13 +133,20 @@ export class ChessGame {
     }
 
     tryMove(toSquare) {
-        if (!this.dragFrom || !toSquare) return false;
-        const move = this.chess.move({ from: this.dragFrom, to: toSquare, promotion: 'q' });
-        this.dragging = false;
-        this.dragFrom = null;
-        this.dragPiece = null;
-        this.selected = null;
-        this.legalTargets = [];
+        if (!this.dragFrom) return false;
+        // Tahta dışı bırakma veya aynı kare: hamle yok, sürüklemeyi iptal et
+        if (!toSquare || toSquare === this.dragFrom) {
+            cancelDragState(this);
+            return false;
+        }
+        let move = null;
+        try {
+            move = this.chess.move({ from: this.dragFrom, to: toSquare, promotion: 'q' });
+        } catch (e) {
+            cancelDragState(this);
+            return false;
+        }
+        cancelDragState(this);
         if (!move) return false;
         if (this.mode === 'pvp' && this.mp?.sendChessMove) {
             this.mp.sendChessMove({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
@@ -184,7 +199,11 @@ export class ChessGame {
     onPointerUp(e) {
         if (!this.dragging) return;
         const p = this.getPointerPos(e);
-        const sq = this.pointToSquare(p.x, p.y);
+        let sq = this.pointToSquare(p.x, p.y);
+        // Fare tahta dışında bırakıldıysa son geçerli hover karesini dene (dar pencerede jitter)
+        if (!sq && this.hoverSq && this.legalTargets.includes(this.hoverSq)) {
+            sq = this.hoverSq;
+        }
         this.tryMove(sq);
     }
     onTouchStart(e) {

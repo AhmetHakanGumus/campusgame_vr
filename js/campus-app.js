@@ -1,5 +1,6 @@
 'use strict';
 
+import * as THREE from 'three';
 import {
     IS_QUEST, IS_MOB, CFG, DIALOGUES, BUILDINGS, SPOTS, NPC_COLORS,
     VR_WALK_SPEED, VR_TURN_SPEED, VR_DEADZONE, SNAP_ANGLE
@@ -488,6 +489,11 @@ applyPlatformDom();
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
             scene.attach(grabbed);
+            // Kontrolcü dönüşü taşa yansımasın — tahta üzerinde dik dursun
+            if (grabbed.userData?.vrChessPiece) {
+                grabbed.rotation.set(0, 0, 0);
+                grabbed.quaternion.identity();
+            }
             if (vrChess && vrChess.held?.mesh === grabbed) {
                 onVrChessDrop(grabbed);
             }
@@ -647,6 +653,8 @@ applyPlatformDom();
                     // mesh root altında: local koordinat kullan
                     const p = vrChess.sqToLocal(sq);
                     mesh.position.set(p.x, vrChess.pieceY, p.z);
+                    mesh.rotation.set(0, 0, 0);
+                    mesh.quaternion.identity();
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
                     vrChess.root.add(mesh);
@@ -718,8 +726,13 @@ applyPlatformDom();
             const legal = held.moves || [];
             let moved = false;
 
-            if (to && legal.includes(to)) {
-                const mv = vrChess.game.move({ from, to, promotion: 'q' });
+            if (to && to !== from && legal.includes(to)) {
+                let mv = null;
+                try {
+                    mv = vrChess.game.move({ from, to, promotion: 'q' });
+                } catch (e) {
+                    mv = null;
+                }
                 moved = !!mv;
                 if (moved && mpClient && currentGame?.mode === 'pvp') {
                     mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });

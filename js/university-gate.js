@@ -1,5 +1,8 @@
 'use strict';
 
+import * as THREE from 'three';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+
 function makeStoneBlockTexture(THREE) {
     const cv = document.createElement('canvas');
     cv.width = 1024;
@@ -42,14 +45,13 @@ function makeStoneBlockTexture(THREE) {
 }
 
 export function addUniversityMainGate({ scene, IS_MOB, buildingAABBs }) {
-    const THREE = window.THREE;
     const GATE_Z = 82;
     const gateRoot = new THREE.Group();
     gateRoot.position.set(0, 0, GATE_Z);
     gateRoot.userData.isWelcomeGate = true;
     scene.add(gateRoot);
 
-    const objLoader = new THREE.OBJLoader();
+    const objLoader = new OBJLoader();
     const texLoader = new THREE.TextureLoader();
     const stoneTex = makeStoneBlockTexture(THREE);
 
