@@ -121,6 +121,7 @@ export class ChessGame {
 
     beginDrag(square) {
         if (!this.canInteract()) return;
+        if (!square) return;
         const piece = this.chess.get(square);
         if (!piece) return;
         if (piece.color !== this.chess.turn()) return;
@@ -188,6 +189,24 @@ export class ChessGame {
     onPointerDown(e) {
         const p = this.getPointerPos(e);
         const sq = this.pointToSquare(p.x, p.y);
+        // Taş seçiliyken (tıkla-bırak sonrası dragging=false) ikinci tıklama = hedef veya yeni taş
+        if (!this.dragging && this.dragFrom && this.legalTargets?.length) {
+            if (!sq) return;
+            if (sq === this.dragFrom) {
+                cancelDragState(this);
+                return;
+            }
+            if (this.legalTargets.includes(sq)) {
+                this.tryMove(sq);
+                return;
+            }
+            const pc = this.chess.get(sq);
+            if (pc && pc.color === this.chess.turn()) {
+                cancelDragState(this);
+                this.beginDrag(sq);
+            }
+            return;
+        }
         this.beginDrag(sq);
     }
     onPointerUp(e) {
@@ -196,6 +215,11 @@ export class ChessGame {
         let sq = this.pointToSquare(p.x, p.y);
         if (!sq && this.hoverSq && this.legalTargets.includes(this.hoverSq)) {
             sq = this.hoverSq;
+        }
+        // Aynı karede bırakıldı: seçim kalsın (ikinci tıklamada hedef kareye hamle)
+        if (sq === this.dragFrom) {
+            this.dragging = false;
+            return;
         }
         this.tryMove(sq);
     }
@@ -242,7 +266,18 @@ export class ChessGame {
             );
         }
 
-        if (this.dragging && this.legalTargets.length) {
+        if (this.dragFrom && this.legalTargets.length) {
+            const p = this.squareToCenter(this.dragFrom);
+            c.fillStyle = 'rgba(120, 180, 255, .28)';
+            c.fillRect(
+                p.x - this.squareSize * 0.5,
+                p.y - this.squareSize * 0.5,
+                this.squareSize,
+                this.squareSize
+            );
+        }
+
+        if (this.dragFrom && this.legalTargets.length) {
             c.fillStyle = 'rgba(20, 30, 45, .5)';
             this.legalTargets.forEach((sq) => {
                 const p = this.squareToCenter(sq);
