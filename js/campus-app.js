@@ -563,6 +563,8 @@ applyPlatformDom();
             const squares = new Map();
             const markers = [];
             const markerMat = new THREE.MeshBasicMaterial({ color: 0x21354d, transparent: true, opacity: 0.72 });
+            const boardY = 0.015;
+            const pieceY = 0.060;
             const highlight = new THREE.Mesh(
                 new THREE.PlaneGeometry(sqSize * 0.92, sqSize * 0.92),
                 new THREE.MeshBasicMaterial({ color: 0x4ca4ff, transparent: true, opacity: 0.36, side: THREE.DoubleSide })
@@ -572,10 +574,11 @@ applyPlatformDom();
             root.add(highlight);
 
             function sqToLocal(sq) {
+                // Siyah/beyaz tarafları değiştir: 180° çevir
                 const f = 'abcdefgh'.indexOf(sq[0]);
                 const r = Number(sq[1]) - 1;
-                const x = (f - 3.5) * sqSize;
-                const z = (r - 3.5) * sqSize;
+                const x = (3.5 - f) * sqSize;
+                const z = (3.5 - r) * sqSize;
                 return new THREE.Vector3(x, 0, z);
             }
 
@@ -589,7 +592,7 @@ applyPlatformDom();
                     );
                     tile.rotation.x = -Math.PI / 2;
                     const p = sqToLocal(sq);
-                    tile.position.set(p.x, 0.015, p.z);
+                    tile.position.set(p.x, boardY, p.z);
                     tile.receiveShadow = !IS_MOB;
                     root.add(tile);
                     squares.set(sq, tile);
@@ -604,11 +607,14 @@ applyPlatformDom();
                 side: 'w',
                 waitingOpponent: mode === 'pvp',
                 sqSize,
+                boardY,
+                pieceY,
                 squares,
                 pieces: new Map(),
                 markers,
                 highlight,
-                held: null
+                held: null,
+                sqToLocal
             };
             vrChess = state;
             rebuildVrChessPieces();
@@ -633,9 +639,8 @@ applyPlatformDom();
                     const sq = `${'abcdefgh'[f]}${8 - r}`;
                     const mesh = makeVrChessPieceMesh(piece);
                     // mesh root altında: local koordinat kullan
-                    const file = 'abcdefgh'.indexOf(sq[0]);
-                    const rank = Number(sq[1]) - 1;
-                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.060, (rank - 3.5) * vrChess.sqSize);
+                    const p = vrChess.sqToLocal(sq);
+                    mesh.position.set(p.x, vrChess.pieceY, p.z);
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
                     vrChess.root.add(mesh);
@@ -645,11 +650,9 @@ applyPlatformDom();
         }
 
         function sqToWorld(sq) {
-            const f = 'abcdefgh'.indexOf(sq[0]);
-            const r = Number(sq[1]) - 1;
-            const x = vrChess.root.position.x + (f - 3.5) * vrChess.sqSize;
-            const z = vrChess.root.position.z + (r - 3.5) * vrChess.sqSize;
-            return new THREE.Vector3(x, vrChess.root.position.y + 0.06, z);
+            const p = vrChess.sqToLocal(sq);
+            const wp = new THREE.Vector3(p.x, vrChess.pieceY, p.z);
+            return vrChess.root.localToWorld(wp);
         }
 
         function nearestSqFromWorld(pos) {
@@ -677,9 +680,12 @@ applyPlatformDom();
             vrChess.markers.forEach((m) => m.removeFromParent());
             vrChess.markers = [];
             targetSquares.forEach((sq) => {
-                const p = sqToWorld(sq);
-                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 10), new THREE.MeshBasicMaterial({ color: 0x1f2f44, transparent: true, opacity: 0.8 }));
-                dot.position.set(p.x - vrChess.root.position.x, 0.015, p.z - vrChess.root.position.z);
+                const p = vrChess.sqToLocal(sq);
+                const dot = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.025, 10, 10),
+                    new THREE.MeshBasicMaterial({ color: 0x1f2f44, transparent: true, opacity: 0.8 })
+                );
+                dot.position.set(p.x, vrChess.boardY, p.z);
                 vrChess.root.add(dot);
                 vrChess.markers.push(dot);
             });
@@ -691,9 +697,8 @@ applyPlatformDom();
                 vrChess.highlight.visible = false;
                 return;
             }
-            const f = 'abcdefgh'.indexOf(sq[0]);
-            const r = Number(sq[1]) - 1;
-            vrChess.highlight.position.set((f - 3.5) * vrChess.sqSize, 0.002, (r - 3.5) * vrChess.sqSize);
+            const p = vrChess.sqToLocal(sq);
+            vrChess.highlight.position.set(p.x, vrChess.boardY + 0.001, p.z);
             vrChess.highlight.visible = true;
         }
 
@@ -712,6 +717,14 @@ applyPlatformDom();
                 if (moved && mpClient && currentGame?.mode === 'pvp') {
                     mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
                 }
+            }
+            // Görsel snap: legal hamlede hedef kareye, değilse başlangıca dön
+            const snapSq = moved ? to : from;
+            if (snapSq) {
+                vrChess.root.attach(mesh);
+                const lp = vrChess.sqToLocal(snapSq);
+                mesh.position.set(lp.x, vrChess.pieceY, lp.z);
+                mesh.rotation.set(0, 0, 0);
             }
             vrChess.held = null;
             setVrChessMarkers([]);
