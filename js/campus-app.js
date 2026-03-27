@@ -746,7 +746,9 @@ applyPlatformDom();
             if (!vrChess || vrChess.mode !== 'ai') return;
             if (vrChess.game.isGameOver()) return;
             if (vrChess.game.turn() !== 'b') return;
-            setTimeout(() => {
+            if (vrChess.aiPending) return;
+            vrChess.aiPending = true;
+            const run = () => {
                 if (!vrChess || vrChess.mode !== 'ai' || vrChess.game.isGameOver()) return;
                 if (vrChess.game.turn() !== 'b') return;
                 const moves = vrChess.game.moves({ verbose: true }) || [];
@@ -756,7 +758,19 @@ applyPlatformDom();
                 vrChess.game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
                 rebuildVrChessPieces();
                 if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
-            }, 380);
+            };
+            // VR'da timer gecikmeleri olabiliyor; hem hızlı hem de bir yedek çağrı yap.
+            setTimeout(() => {
+                try { run(); } finally { if (vrChess) vrChess.aiPending = false; }
+            }, 80);
+            setTimeout(() => {
+                if (!vrChess) return;
+                if (vrChess.game.isGameOver()) return;
+                if (vrChess.game.turn() !== 'b') return;
+                if (vrChess.aiPending) return;
+                vrChess.aiPending = true;
+                try { run(); } finally { if (vrChess) vrChess.aiPending = false; }
+            }, 450);
         }
 
         function pickAiMoveByLevel(game, moves, level) {
