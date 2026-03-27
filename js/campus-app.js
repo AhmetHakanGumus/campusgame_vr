@@ -44,6 +44,9 @@ applyPlatformDom();
         let vrChessPlayBtn = null;
         let chessModeMenu = null;
         let pendingChessSpot = null;
+        let vrChessUiGroup = null;
+        let vrChessUiButtons = [];
+        let vrChessUiHover = null;
 
         // Joystick
         const JOY = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0, thumbEl: null, baseEl: null };
@@ -133,7 +136,13 @@ applyPlatformDom();
             xrRig.add(xrCtrl0);
             xrRig.add(xrCtrl1);
 
-            // Kontrolcü debug mesh/ray gizli tutuluyor.
+            const rayGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -2)
+            ]);
+            const rayMat = new THREE.LineBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.65 });
+            xrCtrl0.add(new THREE.Line(rayGeo, rayMat));
+            xrCtrl1.add(new THREE.Line(rayGeo, rayMat));
 
             /* ── 4) Controller grip modelleri (el) ────── */
             xrGrip0 = renderer.xr.getControllerGrip(0);
@@ -145,9 +154,11 @@ applyPlatformDom();
             /* ── 5) Raycast (trigger ile spot tespiti) ── */
             xrRaycaster = new THREE.Raycaster();
             xrCtrl1.addEventListener('selectstart', () => {
+                if (handleVrChessUiSelect()) return;
                 if (!activeSpot) return;
                 document.getElementById('interact-prompt').style.display = 'none';
                 if (activeSpot.game === 'ch') {
+                    if (xrActive) return;
                     openChessModeMenu(activeSpot);
                     return;
                 }
@@ -751,6 +762,7 @@ applyPlatformDom();
             setupEscMenu();
             setupOnlineUsersPanel();
             setupChessModeMenu();
+            setupVrChessUi();
 
             const mc = document.getElementById('minimap');
             mc.width = mc.height = mmSize; mc.style.width = mc.style.height = mmSize + 'px';
@@ -1027,6 +1039,7 @@ applyPlatformDom();
             updateRemotePlayers(dt);
             syncLocalPlayerMove(dt);
             updateVrChessPlayButton();
+            updateVrChessUi();
 
             renderer.render(scene, camera);
         }
@@ -1170,6 +1183,7 @@ applyPlatformDom();
 
             let nearest = null, nearDist = Infinity;
             SPOTS.forEach(sp => {
+                if (xrActive && sp.game === 'ch') return;
                 const d = origin.distanceTo(new THREE.Vector3(sp.pos.x, 1.5, sp.pos.z));
                 if (d < CFG.interactDist && d < nearDist) { nearDist = d; nearest = sp; }
             });
@@ -1479,6 +1493,129 @@ applyPlatformDom();
             if (open) setEscTab(escMenuTab);
         }
 
+        function makeVrUiButton(label, action, y) {
+            const cv = document.createElement('canvas');
+            cv.width = 512;
+            cv.height = 128;
+            const c = cv.getContext('2d');
+            c.fillStyle = 'rgba(20,30,48,.88)';
+            c.fillRect(0, 0, cv.width, cv.height);
+            c.strokeStyle = 'rgba(220,235,255,.6)';
+            c.lineWidth = 4;
+            c.strokeRect(4, 4, cv.width - 8, cv.height - 8);
+            c.fillStyle = '#eaf2ff';
+            c.font = 'bold 44px Arial';
+            c.textAlign = 'center';
+            c.textBaseline = 'middle';
+            c.fillText(label, cv.width / 2, cv.height / 2);
+            const tex = new THREE.CanvasTexture(cv);
+            const mesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.72, 0.18),
+                new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide })
+            );
+            mesh.position.set(0, y, 0);
+            mesh.userData.vrUiAction = action;
+            return mesh;
+        }
+
+        function setupVrChessUi() {
+            if (vrChessUiGroup) return;
+            vrChessUiGroup = new THREE.Group();
+            vrChessUiGroup.visible = false;
+            scene.add(vrChessUiGroup);
+            vrChessUiButtons = [
+                makeVrUiButton('Satranc Oyna', 'open-menu', 0.35),
+                makeVrUiButton('Oyuncuya Karsi', 'pvp', 0.12),
+                makeVrUiButton('Bilgisayara Karsi', 'ai-menu', -0.10),
+                makeVrUiButton('Kolay', 'ai-easy', -0.30),
+                makeVrUiButton('Orta', 'ai-normal', -0.50),
+                makeVrUiButton('Zor', 'ai-hard', -0.70)
+            ];
+            vrChessUiButtons.forEach((b) => vrChessUiGroup.add(b));
+            setVrChessUiMode('play');
+        }
+
+        function setVrChessUiMode(mode) {
+            if (!vrChessUiGroup) return;
+            if (mode === 'play') {
+                vrChessUiButtons.forEach((b, i) => (b.visible = i === 0));
+            } else if (mode === 'mode') {
+                vrChessUiButtons.forEach((b, i) => (b.visible = i === 1 || i === 2));
+            } else if (mode === 'ai-level') {
+                vrChessUiButtons.forEach((b, i) => (b.visible = i >= 3));
+            } else {
+                vrChessUiButtons.forEach((b) => (b.visible = false));
+            }
+            vrChessUiHover = null;
+        }
+
+        function updateVrChessUi() {
+            if (!vrChessUiGroup || !xrActive || G.gameRunning) {
+                if (vrChessUiGroup) vrChessUiGroup.visible = false;
+                vrChessUiHover = null;
+                return;
+            }
+            const chessSpot = SPOTS.find((s) => s.game === 'ch');
+            if (!chessSpot || !player) {
+                vrChessUiGroup.visible = false;
+                vrChessUiHover = null;
+                return;
+            }
+            const dx = player.position.x - chessSpot.pos.x;
+            const dz = player.position.z - chessSpot.pos.z;
+            const near = Math.sqrt(dx * dx + dz * dz) < Math.max(9, CFG.interactDist + 2);
+            if (!near) {
+                vrChessUiGroup.visible = false;
+                setVrChessUiMode('play');
+                return;
+            }
+            pendingChessSpot = chessSpot;
+            vrChessUiGroup.visible = true;
+            vrChessUiGroup.position.set(chessSpot.pos.x, 2.5, chessSpot.pos.z - 1.8);
+            vrChessUiGroup.lookAt(player.position.x, 2.0, player.position.z);
+
+            if (xrCtrl1 && xrRaycaster) {
+                const origin = new THREE.Vector3();
+                const dir = new THREE.Vector3();
+                xrCtrl1.getWorldPosition(origin);
+                xrCtrl1.getWorldDirection(dir);
+                dir.negate();
+                xrRaycaster.set(origin, dir);
+                const hits = xrRaycaster.intersectObjects(vrChessUiButtons.filter((b) => b.visible), false);
+                vrChessUiHover = hits[0]?.object || null;
+                vrChessUiButtons.forEach((b) => b.scale.setScalar(b === vrChessUiHover ? 1.06 : 1));
+            }
+        }
+
+        function handleVrChessUiSelect() {
+            if (!xrActive || !vrChessUiGroup?.visible || !vrChessUiHover || !pendingChessSpot) return false;
+            const action = vrChessUiHover.userData?.vrUiAction;
+            if (action === 'open-menu') {
+                setVrChessUiMode('mode');
+                return true;
+            }
+            if (action === 'pvp') {
+                if (!mpClient) {
+                    setVrChessUiMode('play');
+                    return true;
+                }
+                setVrChessUiMode('play');
+                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'pvp' });
+                return true;
+            }
+            if (action === 'ai-menu') {
+                setVrChessUiMode('ai-level');
+                return true;
+            }
+            if (action === 'ai-easy' || action === 'ai-normal' || action === 'ai-hard') {
+                const aiLevel = action.replace('ai-', '');
+                setVrChessUiMode('play');
+                startGame('ch', pendingChessSpot.id, pendingChessSpot.title, { mode: 'ai', aiLevel });
+                return true;
+            }
+            return false;
+        }
+
         function setupChessModeMenu() {
             const btn = document.createElement('button');
             btn.id = 'vr-chess-play-btn';
@@ -1554,9 +1691,13 @@ applyPlatformDom();
 
         function updateVrChessPlayButton() {
             if (!vrChessPlayBtn) return;
+            if (xrActive) {
+                vrChessPlayBtn.style.display = 'none';
+                return;
+            }
             const chessSpot = SPOTS.find((s) => s.game === 'ch') || null;
             let nearChess = false;
-            if (xrActive && !G.gameRunning && chessSpot && player) {
+            if (!G.gameRunning && chessSpot && player) {
                 const dx = player.position.x - chessSpot.pos.x;
                 const dz = player.position.z - chessSpot.pos.z;
                 nearChess = Math.sqrt(dx * dx + dz * dz) < Math.max(9, CFG.interactDist + 2);
