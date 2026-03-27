@@ -571,7 +571,7 @@ applyPlatformDom();
             const markers = [];
             const markerMat = new THREE.MeshBasicMaterial({ color: 0x21354d, transparent: true, opacity: 0.72 });
             const boardY = 0.015;
-            const pieceY = 0.40;
+            const pieceY = 0.040;
             const highlight = new THREE.Mesh(
                 new THREE.PlaneGeometry(sqSize * 0.92, sqSize * 0.92),
                 new THREE.MeshBasicMaterial({ color: 0x4ca4ff, transparent: true, opacity: 0.36, side: THREE.DoubleSide })
