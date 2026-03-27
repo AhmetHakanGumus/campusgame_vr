@@ -64,6 +64,9 @@ applyPlatformDom();
         let xrSupported = false;
         let xrLeftHand = null, xrRightHand = null;
         let xrGrabbedLeft = null, xrGrabbedRight = null;
+        /** squeeze olayları bazı runtime'larda kaçırılabiliyor; poll ile yedeklenir */
+        let xrPrevSqueezeLeft = false;
+        let xrPrevSqueezeRight = false;
         const vrGrabbables = [];
         let xrHandsLoaded = false;
         let rebindVRHands = () => {};
@@ -487,11 +490,6 @@ applyPlatformDom();
             scene.attach(grabbed);
             if (vrChess && vrChess.held?.mesh === grabbed) {
                 onVrChessDrop(grabbed);
-            } else if (vrChess && vrChess.held) {
-                vrChess.held = null;
-                setVrChessMarkers([]);
-                setVrChessSquareHighlight(null);
-                rebuildVrChessPieces();
             }
             if (handedness === 'left') xrGrabbedLeft = null;
             else xrGrabbedRight = null;
@@ -678,7 +676,8 @@ applyPlatformDom();
                     if (d < bestD) { bestD = d; best = sq; }
                 }
             }
-            return bestD <= vrChess.sqSize * 1.2 ? best : null;
+            // Kare merkezine göre biraz tolerans (bırakma pozisyonu tam ortada olmayabilir)
+            return bestD <= vrChess.sqSize * 1.55 ? best : null;
         }
 
         function setVrChessMarkers(targetSquares = []) {
@@ -1213,6 +1212,16 @@ applyPlatformDom();
                 const curlVal = Math.max(triggerVal, squeezeVal);
                 if (src.handedness === 'left') setVRHandCurl(xrLeftHand, curlVal);
                 if (src.handedness === 'right') setVRHandCurl(xrRightHand, curlVal);
+
+                // Grip bırakıldı ama squeezeend gelmediyse (WebXR / tarayıcı farkı)
+                const sqPressed = squeezeVal > 0.45;
+                if (src.handedness === 'left') {
+                    if (xrPrevSqueezeLeft && !sqPressed && xrGrabbedLeft) releaseGrabbedObject('left');
+                    xrPrevSqueezeLeft = sqPressed;
+                } else if (src.handedness === 'right') {
+                    if (xrPrevSqueezeRight && !sqPressed && xrGrabbedRight) releaseGrabbedObject('right');
+                    xrPrevSqueezeRight = sqPressed;
+                }
 
                 /* ── Sol el: Yürüyüş (baş yönünde) ────── */
                 if (src.handedness === 'left') {
