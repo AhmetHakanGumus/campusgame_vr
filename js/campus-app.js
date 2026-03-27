@@ -450,10 +450,7 @@ applyPlatformDom();
                 if (d < bestDist) { bestDist = d; best = o; }
             });
             if (!best) return;
-            best.userData.prevParent = best.parent;
-            ctrl.attach(best);
-            best.position.set(0, -0.03, -0.2);
-            best.rotation.set(0, 0, 0);
+            let heldData = null;
             if (vrChess && best.userData?.vrChessPiece) {
                 const from = best.userData.vrChessPiece;
                 const piece = vrChess.game.get(from);
@@ -462,9 +459,16 @@ applyPlatformDom();
                 if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
                 if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
                 const moves = vrChess.game.moves({ square: from, verbose: true }) || [];
-                vrChess.held = { mesh: best, from, moves: moves.map((m) => m.to), hand: handedness };
+                heldData = { from, moves: moves.map((m) => m.to) };
+            }
+            best.userData.prevParent = best.parent;
+            ctrl.attach(best);
+            best.position.set(0, -0.03, -0.2);
+            best.rotation.set(0, 0, 0);
+            if (vrChess && heldData) {
+                vrChess.held = { mesh: best, from: heldData.from, moves: heldData.moves, hand: handedness };
                 setVrChessMarkers(vrChess.held.moves);
-                setVrChessSquareHighlight(from);
+                setVrChessSquareHighlight(heldData.from);
             }
             if (handedness === 'left') xrGrabbedLeft = best;
             else xrGrabbedRight = best;
@@ -482,8 +486,12 @@ applyPlatformDom();
         }
 
         function makeVrChessPieceMesh(piece) {
-            const mat = new THREE.MeshLambertMaterial({
-                color: piece.color === 'w' ? 0xf4f1e8 : 0x222831
+            const mat = new THREE.MeshStandardMaterial({
+                color: piece.color === 'w' ? 0xf4f1e8 : 0x2f3742,
+                roughness: 0.5,
+                metalness: 0.08,
+                emissive: piece.color === 'w' ? 0x141414 : 0x0f151c,
+                emissiveIntensity: 0.2
             });
             const g = new THREE.Group();
 
@@ -536,6 +544,7 @@ applyPlatformDom();
                     o.receiveShadow = !IS_MOB;
                 }
             });
+            g.scale.setScalar(1.22);
             return g;
         }
 
@@ -643,7 +652,10 @@ applyPlatformDom();
                 for (let f = 0; f < 8; f++) {
                     const sq = `${'abcdefgh'[f]}${r}`;
                     const p = sqToWorld(sq);
-                    const d = p.distanceTo(pos);
+                    // Drop algısını yükseklikten bağımsız tut: VR'da el doğal olarak yukarıda kalabiliyor.
+                    const dx = p.x - pos.x;
+                    const dz = p.z - pos.z;
+                    const d = Math.sqrt(dx * dx + dz * dz);
                     if (d < bestD) {
                         bestD = d;
                         best = sq;
