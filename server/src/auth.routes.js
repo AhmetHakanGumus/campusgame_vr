@@ -1,9 +1,9 @@
 import express from 'express';
-import bcrypt from 'bcrypt';
 import { pool } from './db.js';
+import { hashPassword, verifyPassword } from './security/password.js';
+import { createLoginSession, isUsernameOnline } from './session.store.js';
 
 const router = express.Router();
-const SALT_ROUNDS = 12;
 
 router.post('/register', async (req, res) => {
     try {
@@ -19,7 +19,7 @@ router.post('/register', async (req, res) => {
                 .json({ message: 'username en az 3, password en az 6 karakter olmalı.' });
         }
 
-        const passwordHash = await bcrypt.hash(String(password), SALT_ROUNDS);
+        const passwordHash = await hashPassword(String(password));
 
         const result = await pool.query(
             'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username',
@@ -56,13 +56,18 @@ router.post('/login', async (req, res) => {
         }
 
         const user = result.rows[0];
-        const isMatch = await bcrypt.compare(String(password), user.password_hash);
+        if (isUsernameOnline(user.username)) {
+            return res.status(409).json({ message: 'Bu hesap şu anda çevrimiçi. İkinci oturum açılamaz.' });
+        }
+
+        const isMatch = await verifyPassword(String(password), user.password_hash);
 
         if (!isMatch) {
             return res.status(401).json({ message: 'Geçersiz kullanıcı adı veya şifre.' });
         }
 
-        return res.json({ message: 'success' });
+        const sessionToken = createLoginSession(user.username);
+        return res.json({ message: 'success', username: user.username, sessionToken });
     } catch (error) {
         return res.status(500).json({ message: 'Giriş sırasında hata oluştu.' });
     }

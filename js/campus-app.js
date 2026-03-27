@@ -11,7 +11,7 @@ import { G } from './runtime.js';
 import { addUniversityMainGate, updateUniversityGateAnimations } from './university-gate.js';
 import { getLeaderboard, saveScore, getRank } from './api.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
-import { addGapYenev, addMonument } from './custom-buildings.js';
+import { createMultiplayerClient } from './multiplayer.js';
 
 applyPlatformDom();
 
@@ -26,6 +26,18 @@ applyPlatformDom();
         let bldgTimer = null, mapTimer = null, lbTimer = null;
         let activeSpot = null;
         let mainRafId = 0;
+        let isRunning = false;
+        let escMenuOpen = false;
+        let escMenuBackdrop = null;
+        let escMenuTab = 'leaderboard';
+        let localPlayerId = null;
+        let localUsername = 'Oyuncu';
+        let localSessionToken = '';
+        let mpClient = null;
+        let remotePlayers = new Map();
+        let onlineUsers = [];
+        let onlineUsersPanel = null;
+        let moveSyncT = 0;
 
         // Joystick
         const JOY = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0, thumbEl: null, baseEl: null };
@@ -382,6 +394,8 @@ applyPlatformDom();
             setupControls();
             setupLeaderboard();
             setupMiniGames();
+            setupEscMenu();
+            setupOnlineUsersPanel();
 
             const mc = document.getElementById('minimap');
             mc.width = mc.height = mmSize; mc.style.width = mc.style.height = mmSize + 'px';
@@ -419,38 +433,14 @@ applyPlatformDom();
 
         function addPlane(x, z, w, d, mat, dy = 0) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, dy, z); scene.add(m); }
 
-        function addBuilding(b) {
-            const { x, z, w, h, d, color, kind } = b;
-            if (kind === 'gap_yenev') {
-                addGapYenev({ scene, x, z, w, h, d, color, IS_MOB });
-            } else if (kind === 'monument') {
-                addMonument({ scene, x, z, w, h, d, color, IS_MOB });
-            } else {
-                const mat = new THREE.MeshLambertMaterial({ color });
-                const body = bx(w, h, d, mat);
-                body.position.set(x, h / 2, z);
-                body.castShadow = body.receiveShadow = !IS_MOB;
-                scene.add(body);
-
-                const roof = bx(w + 0.6, 0.8, d + 0.6, new THREE.MeshLambertMaterial({ color: dk(color, 0.7) }));
-                roof.position.set(x, h + 0.4, z);
-                scene.add(roof);
-
-                const wm = new THREE.MeshLambertMaterial({ color: 0x9ecae1, transparent: true, opacity: 0.85 });
-                const cols = Math.max(2, Math.floor(w / 5)),
-                    rows = Math.max(1, Math.floor(h / 4));
-                for (let r = 0; r < rows; r++)
-                    for (let c = 0; c < cols; c++) {
-                        const w2 = bx(1.5, 1.2, 0.12, wm);
-                        w2.position.set(x + (c - (cols - 1) / 2) * (w / cols), 2 + r * 3.3, z + d / 2 + 0.07);
-                        scene.add(w2);
-                    }
-
-                const door = bx(2.2, 3.2, 0.15, new THREE.MeshLambertMaterial({ color: dk(color, 0.5) }));
-                door.position.set(x, 1.6, z + d / 2 + 0.08);
-                scene.add(door);
-            }
-
+        function addBuilding({ x, z, w, h, d, color }) {
+            const mat = new THREE.MeshLambertMaterial({ color });
+            const body = bx(w, h, d, mat); body.position.set(x, h / 2, z); body.castShadow = body.receiveShadow = !IS_MOB; scene.add(body);
+            const roof = bx(w + .6, .8, d + .6, new THREE.MeshLambertMaterial({ color: dk(color, .7) })); roof.position.set(x, h + .4, z); scene.add(roof);
+            const wm = new THREE.MeshLambertMaterial({ color: 0x9ecae1, transparent: true, opacity: .85 });
+            const cols = Math.max(2, Math.floor(w / 5)), rows = Math.max(1, Math.floor(h / 4));
+            for (let r = 0; r < rows; r++)for (let c = 0; c < cols; c++) { const w2 = bx(1.5, 1.2, .12, wm); w2.position.set(x + (c - (cols - 1) / 2) * (w / cols), 2 + r * 3.3, z + d / 2 + .07); scene.add(w2); }
+            const door = bx(2.2, 3.2, .15, new THREE.MeshLambertMaterial({ color: dk(color, .5) })); door.position.set(x, 1.6, z + d / 2 + .08); scene.add(door);
             buildingAABBs.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
         }
 
@@ -661,6 +651,8 @@ applyPlatformDom();
             updateProxLabels();
             updateBubbles();
             drawMinimap();
+            updateRemotePlayers(dt);
+            syncLocalPlayerMove(dt);
 
             renderer.render(scene, camera);
         }
@@ -678,11 +670,13 @@ applyPlatformDom();
                 if (keys['KeyW'] || keys['ArrowUp']) fd = -1;
                 if (keys['KeyS'] || keys['ArrowDown']) fd = 1;
             }
+            isRunning = !!keys['ShiftLeft'] || !!keys['ShiftRight'];
             const mv = fd !== 0;
             if (mv) {
                 const px = player.position.x, pz = player.position.z;
-                let nx = px + Math.sin(playerYaw) * fd * CFG.walkSpeed * dt;
-                let nz = pz + Math.cos(playerYaw) * fd * CFG.walkSpeed * dt;
+                const speed = CFG.walkSpeed * (isRunning ? 1.8 : 1);
+                let nx = px + Math.sin(playerYaw) * fd * speed * dt;
+                let nz = pz + Math.cos(playerYaw) * fd * speed * dt;
                 nx = Math.max(-94, Math.min(94, nx)); nz = Math.max(-98, Math.min(118, nz));
                 if (!inBldg(nx, pz, .75)) player.position.x = nx;
                 if (!inBldg(player.position.x, nz, .75)) player.position.z = nz;
@@ -736,6 +730,8 @@ applyPlatformDom();
                 if (src.handedness === 'left') {
                     const axX = gp.axes[2] || 0;
                     const axZ = gp.axes[3] || 0;
+                    const runMul = triggerVal > 0.7 ? 1.8 : 1;
+                    isRunning = runMul > 1;
 
                     if (Math.abs(axX) > VR_DEADZONE || Math.abs(axZ) > VR_DEADZONE) {
                         // Headset'in baktığı yönü al
@@ -749,8 +745,8 @@ applyPlatformDom();
 
                         // Joystick girdisini baş yönüne göre harekete çevir
                         const move = new THREE.Vector3();
-                        move.addScaledVector(forward, -axZ * VR_WALK_SPEED * dt);
-                        move.addScaledVector(right, axX * VR_WALK_SPEED * dt);
+                        move.addScaledVector(forward, -axZ * VR_WALK_SPEED * runMul * dt);
+                        move.addScaledVector(right, axX * VR_WALK_SPEED * runMul * dt);
 
                         let nx = xrRig.position.x + move.x;
                         let nz = xrRig.position.z + move.z;
@@ -925,6 +921,11 @@ applyPlatformDom();
         function setupControls() {
             window.addEventListener('keydown', e => { keys[e.code] = true; if (['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault(); });
             window.addEventListener('keyup', e => { keys[e.code] = false; });
+            window.addEventListener('keydown', (e) => {
+                if (e.code !== 'Escape') return;
+                e.preventDefault();
+                setEscMenuOpen(!escMenuOpen);
+            });
             setupInteractPrompt();
 
             if (IS_QUEST) {
@@ -1045,6 +1046,139 @@ applyPlatformDom();
         function updateJoyBase() { const b = document.getElementById('joy-base'); if (!b.offsetParent && !IS_MOB) return; const rect = b.getBoundingClientRect(); JOY.bx = rect.left + rect.width / 2; JOY.by = rect.top + rect.height / 2; JOY.baseEl = b; JOY.thumbEl = document.getElementById('joy-thumb'); }
         function setJoyThumb(cx, cy) { const dx = cx - JOY.bx, dy = cy - JOY.by, dist = Math.min(Math.sqrt(dx * dx + dy * dy), CFG.joyRadius), ang = Math.atan2(dy, dx), tx = Math.cos(ang) * dist, ty = Math.sin(ang) * dist; JOY.dx = tx / CFG.joyRadius; JOY.dy = ty / CFG.joyRadius; if (JOY.thumbEl) JOY.thumbEl.style.transform = `translate(calc(-50% + ${tx}px),calc(-50% + ${ty}px))`; }
         function resetJoy() { JOY.active = false; JOY.id = -1; JOY.dx = 0; JOY.dy = 0; if (JOY.thumbEl) JOY.thumbEl.style.transform = 'translate(-50%,-50%)'; }
+
+        function setupEscMenu() {
+            const backdrop = document.createElement('div');
+            backdrop.id = 'esc-menu-backdrop';
+            backdrop.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1200;';
+            document.body.appendChild(backdrop);
+            escMenuBackdrop = backdrop;
+
+            const card = document.createElement('div');
+            card.id = 'esc-menu-card';
+            card.style.cssText = 'display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,760px);max-height:80vh;overflow:auto;background:#131a28;color:#eaf2ff;border:1px solid #2d3b59;border-radius:12px;z-index:1201;padding:14px;';
+            card.innerHTML = `
+                <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                  <div style="display:flex;gap:8px;">
+                    <button data-esc-tab="leaderboard">🏆 Leaderboard</button>
+                    <button data-esc-tab="online">🟢 Online</button>
+                    <button data-esc-tab="map">🗺️ Harita</button>
+                  </div>
+                  <button id="esc-menu-close">Kapat ✕</button>
+                </div>
+                <div id="esc-menu-content"></div>
+            `;
+            document.body.appendChild(card);
+            card.querySelectorAll('[data-esc-tab]').forEach((btn) =>
+                btn.addEventListener('click', () => setEscTab(btn.dataset.escTab || 'leaderboard'))
+            );
+            card.querySelector('#esc-menu-close')?.addEventListener('click', () => setEscMenuOpen(false));
+        }
+
+        function setEscTab(tab) {
+            escMenuTab = tab;
+            const content = document.getElementById('esc-menu-content');
+            if (!content) return;
+            if (tab === 'leaderboard') {
+                content.innerHTML = '<div>Sağdaki Leaderboard panelini kullanabilirsin.</div>';
+            } else if (tab === 'online') {
+                content.innerHTML = '<div id="esc-online-inline"></div>';
+                const holder = content.querySelector('#esc-online-inline');
+                if (holder) holder.innerHTML = (onlineUsers || []).map((u) => `<div>🟢 ${esc(u)}</div>`).join('') || '<div>Çevrimiçi kullanıcı yok</div>';
+            } else {
+                content.innerHTML = '<div>Harita sağ alttaki minimapte canlıdır.</div>';
+            }
+        }
+
+        function setEscMenuOpen(open) {
+            if (escMenuOpen === open) return;
+            escMenuOpen = open;
+            const b = document.getElementById('esc-menu-backdrop');
+            const c = document.getElementById('esc-menu-card');
+            if (b) b.style.display = open ? 'block' : 'none';
+            if (c) c.style.display = open ? 'block' : 'none';
+            if (open) setEscTab(escMenuTab);
+        }
+
+        function createRemotePlayer(data) {
+            if (!data?.id || data.id === localPlayerId || remotePlayers.has(data.id)) return;
+            const avatar = makeHuman(0x3f8efc, 0x1a2a3a);
+            avatar.position.set(Number(data.x) || 0, Number(data.y) || 0, Number(data.z) || 108);
+            avatar.rotation.y = Number(data.yaw) || 0;
+            scene.add(avatar);
+            remotePlayers.set(data.id, avatar);
+        }
+
+        function removeRemotePlayer(id) {
+            const avatar = remotePlayers.get(id);
+            if (!avatar) return;
+            avatar.removeFromParent();
+            remotePlayers.delete(id);
+        }
+
+        function updateRemotePlayers(dt) {
+            remotePlayers.forEach((avatar) => walkAnim(avatar, dt, false));
+        }
+
+        function setupOnlineUsersPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'online-users-panel';
+            panel.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:999;background:rgba(15,22,35,.82);color:#dfe8ff;padding:8px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;max-width:220px;font-size:12px;display:none;';
+            document.body.appendChild(panel);
+            onlineUsersPanel = panel;
+        }
+
+        function renderOnlineUsersPanel() {
+            if (!onlineUsersPanel) return;
+            const items = (onlineUsers || []).slice(0, 50);
+            onlineUsersPanel.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">Online (${items.length})</div>${items.length ? items.map((u) => `<div>🟢 ${esc(u)}</div>`).join('') : '<div>Yok</div>'}`;
+            onlineUsersPanel.style.display = items.length ? 'block' : 'none';
+        }
+
+        function connectMultiplayer() {
+            if (mpClient || !localSessionToken) return;
+            mpClient = createMultiplayerClient(
+                { nickname: localUsername, username: localUsername, sessionToken: localSessionToken },
+                {
+                    onSelfInit: ({ id, players }) => {
+                        localPlayerId = id;
+                        (players || []).forEach((p) => createRemotePlayer(p));
+                    },
+                    onPlayerJoined: (p) => createRemotePlayer(p),
+                    onPlayerMoved: (p) => {
+                        if (!p || p.id === localPlayerId) return;
+                        if (!remotePlayers.has(p.id)) createRemotePlayer(p);
+                        const avatar = remotePlayers.get(p.id);
+                        if (!avatar) return;
+                        avatar.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 108);
+                        avatar.rotation.y = Number(p.yaw) || 0;
+                    },
+                    onPlayerLeft: (id) => removeRemotePlayer(id),
+                    onOnlineUsers: (users) => {
+                        onlineUsers = users || [];
+                        renderOnlineUsersPanel();
+                        if (escMenuOpen && escMenuTab === 'online') setEscTab('online');
+                    },
+                    onAuthError: (msg) => {
+                        console.warn('Multiplayer auth error:', msg);
+                    }
+                }
+            );
+        }
+
+        function syncLocalPlayerMove(dt) {
+            if (!mpClient || !player || G.gameRunning) return;
+            moveSyncT += dt;
+            if (moveSyncT < 0.08) return;
+            moveSyncT = 0;
+            mpClient.sendMove({
+                x: player.position.x,
+                y: player.position.y,
+                z: player.position.z,
+                yaw: playerYaw,
+                running: isRunning
+            });
+        }
 
 
         /* ════════════════════════════════════════════════
@@ -1214,13 +1348,16 @@ applyPlatformDom();
 
         let campusStarted = false;
 
-        export async function startCampusExperience() {
+        export async function startCampusExperience(username = 'Oyuncu', sessionToken = '') {
             if (campusStarted) return;
             campusStarted = true;
+            localUsername = String(username || 'Oyuncu');
+            localSessionToken = String(sessionToken || '');
             document.getElementById('welcome').style.display = 'none';
             try {
                 await initGame();
                 initAudio();
+                connectMultiplayer();
                 if (!IS_MOB && !IS_QUEST) {
                     const lockPromise = renderer.domElement.requestPointerLock();
                     if (lockPromise instanceof Promise) {

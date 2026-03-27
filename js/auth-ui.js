@@ -36,10 +36,10 @@ export function setupAuthUI(onLoginSuccess) {
         const password = document.getElementById('auth-login-password').value;
         if (!username || !password) return setMessage('Lütfen tüm alanları doldur.');
         try {
-            await loginUser(username, password);
+            const loginRes = await loginUser(username, password);
             setMessage('Giriş başarılı. Yükleniyor...', true);
             screen.style.display = 'none';
-            await onLoginSuccess();
+            await onLoginSuccess(loginRes?.username || username, loginRes?.sessionToken || '');
         } catch (err) {
             setMessage(err.message || 'Giriş başarısız.');
         }
