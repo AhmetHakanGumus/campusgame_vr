@@ -49,12 +49,15 @@ applyPlatformDom();
         let xrRig = null;
         let xrCtrl0 = null;
         let xrCtrl1 = null;
+        let xrGrip0 = null;
+        let xrGrip1 = null;
         let xrRaycaster = null;
         let xrSupported = false;
         let xrLeftHand = null, xrRightHand = null;
         let xrGrabbedLeft = null, xrGrabbedRight = null;
         const vrGrabbables = [];
         let xrHandsLoaded = false;
+        let rebindVRHands = () => {};
 
         function startNonVRLoop() {
             if (mainRafId) return;
@@ -124,7 +127,7 @@ applyPlatformDom();
             xrRig.add(xrCtrl0);
             xrRig.add(xrCtrl1);
 
-            // Kontrolcü görselleri: ince çubuk + ray
+            // Kontrolcü görselleri: ince tutacak (ray kapatildi)
             const ctrlGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.18, 8);
             const ctrlMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
             [xrCtrl0, xrCtrl1].forEach(ctrl => {
@@ -132,20 +135,14 @@ applyPlatformDom();
                 mesh.rotation.x = Math.PI / 2;
                 mesh.position.z = -0.09;
                 ctrl.add(mesh);
-                const lineGeo = new THREE.BufferGeometry().setFromPoints([
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(0, 0, -2)
-                ]);
-                ctrl.add(new THREE.Line(lineGeo,
-                    new THREE.LineBasicMaterial({ color: 0xff8888, transparent: true, opacity: .4 })));
             });
 
             /* ── 4) Controller grip modelleri (el) ────── */
-            const grip0 = renderer.xr.getControllerGrip(0);
-            const grip1 = renderer.xr.getControllerGrip(1);
-            initVRHands(grip0, grip1);
-            xrRig.add(grip0);
-            xrRig.add(grip1);
+            xrGrip0 = renderer.xr.getControllerGrip(0);
+            xrGrip1 = renderer.xr.getControllerGrip(1);
+            initVRHands(xrGrip0, xrGrip1);
+            xrRig.add(xrGrip0);
+            xrRig.add(xrGrip1);
 
             /* ── 5) Raycast (trigger ile spot tespiti) ── */
             xrRaycaster = new THREE.Raycaster();
@@ -196,6 +193,8 @@ applyPlatformDom();
 
                 // HTML overlay'leri gizle (VR'da görünmezler ama temizlik)
                 hideHTMLForVR(true);
+                rebindVRHands();
+                setTimeout(() => rebindVRHands(), 300);
 
                 renderer.setAnimationLoop(loop);
                 console.log('VR oturumu başladı – 1. şahıs modu');
@@ -337,6 +336,43 @@ applyPlatformDom();
                     );
                 });
 
+            const attachToGrip = (hand, grip) => {
+                if (!hand || !grip) return;
+                if (hand.parent) hand.parent.remove(hand);
+                grip.add(hand);
+                hand.visible = true;
+            };
+            const attachByController = (controllerIndex, handedness) => {
+                const h = String(handedness || '').toLowerCase();
+                if (h !== 'left' && h !== 'right') return;
+                const grip = controllerIndex === 0 ? grip0 : grip1;
+                const hand = h === 'left' ? xrLeftHand : xrRightHand;
+                attachToGrip(hand, grip);
+            };
+            rebindVRHands = () => {
+                if (!xrHandsLoaded) return;
+                let foundAny = false;
+                const session = renderer?.xr?.getSession?.();
+                if (session?.inputSources?.length) {
+                    session.inputSources.forEach((src) => {
+                        const h = String(src?.handedness || '').toLowerCase();
+                        if (h !== 'left' && h !== 'right') return;
+                        if (src.targetRaySpace === xrCtrl0) {
+                            attachByController(0, h);
+                            foundAny = true;
+                        } else if (src.targetRaySpace === xrCtrl1) {
+                            attachByController(1, h);
+                            foundAny = true;
+                        }
+                    });
+                }
+                if (!foundAny) {
+                    // Fallback: ilk düzeni koru.
+                    attachToGrip(xrLeftHand, grip0);
+                    attachToGrip(xrRightHand, grip1);
+                }
+            };
+
             Promise.all([
                 buildHand('/models/LeftHand.fbx', 'left'),
                 buildHand('/models/RightHand.fbx', 'right')
@@ -344,9 +380,15 @@ applyPlatformDom();
                 .then(([leftHand, rightHand]) => {
                     xrLeftHand = leftHand;
                     xrRightHand = rightHand;
-                    grip0.add(leftHand);
-                    grip1.add(rightHand);
                     xrHandsLoaded = true;
+                    rebindVRHands();
+
+                    xrCtrl0.addEventListener('connected', (ev) => {
+                        attachByController(0, ev?.data?.handedness);
+                    });
+                    xrCtrl1.addEventListener('connected', (ev) => {
+                        attachByController(1, ev?.data?.handedness);
+                    });
                 })
                 .catch(() => fallback());
         }
