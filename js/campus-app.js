@@ -688,6 +688,23 @@ applyPlatformDom();
             return bestD <= vrChess.sqSize * 1.55 ? best : null;
         }
 
+        /** Taş elde titreyince en yakın kare genelde yasal hedef değil; sadece yasal gidiş karelerine bak. */
+        function nearestLegalDestFromWorld(worldPos, legalDests) {
+            if (!vrChess || !legalDests?.length) return null;
+            const local = vrChess.root.worldToLocal(worldPos.clone());
+            let best = null;
+            let bestD = Infinity;
+            for (const sq of legalDests) {
+                const p = vrChess.sqToLocal(sq);
+                const d = Math.hypot(p.x - local.x, p.z - local.z);
+                if (d < bestD) {
+                    bestD = d;
+                    best = sq;
+                }
+            }
+            return bestD <= vrChess.sqSize * 2.1 ? best : null;
+        }
+
         function setVrChessMarkers(targetSquares = []) {
             if (!vrChess) return;
             vrChess.markers.forEach((m) => m.removeFromParent());
@@ -721,9 +738,13 @@ applyPlatformDom();
 
             const wp = new THREE.Vector3();
             mesh.getWorldPosition(wp);
-            const to = nearestSqFromWorld(wp);
             const from = held.from;
             const legal = held.moves || [];
+            let to = nearestLegalDestFromWorld(wp, legal);
+            if (!to) {
+                const g = nearestSqFromWorld(wp);
+                if (g && legal.includes(g)) to = g;
+            }
             let moved = false;
 
             if (to && to !== from && legal.includes(to)) {
@@ -771,18 +792,26 @@ applyPlatformDom();
                 rebuildVrChessPieces();
                 if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
             };
-            // VR'da timer gecikmeleri olabiliyor; hem hızlı hem de bir yedek çağrı yap.
-            setTimeout(() => {
-                try { run(); } finally { if (vrChess) vrChess.aiPending = false; }
-            }, 80);
+            // rAF: XR oturumunda setTimeout gecikmesi/askıya alma riskine karşı
+            requestAnimationFrame(() => {
+                try {
+                    run();
+                } finally {
+                    if (vrChess) vrChess.aiPending = false;
+                }
+            });
             setTimeout(() => {
                 if (!vrChess) return;
                 if (vrChess.game.isGameOver()) return;
                 if (vrChess.game.turn() !== 'b') return;
                 if (vrChess.aiPending) return;
                 vrChess.aiPending = true;
-                try { run(); } finally { if (vrChess) vrChess.aiPending = false; }
-            }, 450);
+                try {
+                    run();
+                } finally {
+                    if (vrChess) vrChess.aiPending = false;
+                }
+            }, 420);
         }
 
         function pickAiMoveByLevel(game, moves, level) {
