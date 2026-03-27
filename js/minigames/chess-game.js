@@ -11,6 +11,7 @@ export class ChessGame {
         this.H = H;
         this.done = done;
         this.mode = opts.mode || 'ai'; // ai | pvp
+        this.aiLevel = opts.aiLevel || 'normal'; // easy | normal | hard
         this.localPlayerId = opts.localPlayerId || null;
         this.mp = opts.multiplayer || null;
         this.chess = new Chess();
@@ -160,7 +161,7 @@ export class ChessGame {
                 if (this.gameOver) return;
                 const moves = this.chess.moves({ verbose: true });
                 if (!moves.length) return this.postMove();
-                const mv = moves[Math.floor(Math.random() * moves.length)];
+                const mv = pickAiMove(this.chess, moves, this.aiLevel);
                 this.chess.move({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
                 this.postMove();
             }, 350);
@@ -282,5 +283,40 @@ export class ChessGame {
             c.fillText(this.resultText, 12, 50);
         }
     }
+}
+
+function pickAiMove(chess, moves, level) {
+    if (!moves?.length) return null;
+    if (level === 'easy') return moves[Math.floor(Math.random() * moves.length)];
+
+    const pieceValue = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+    let best = moves[0];
+    let bestScore = -Infinity;
+
+    for (const m of moves) {
+        let score = 0;
+        if (m.captured) score += pieceValue[m.captured] || 0;
+        if (m.promotion) score += 8;
+
+        if (level === 'hard') {
+            const snap = new Chess(chess.fen());
+            snap.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+            if (snap.isCheckmate()) score += 1000;
+            if (snap.inCheck()) score += 2;
+            const reply = snap.moves({ verbose: true });
+            if (reply?.length) {
+                // Opponent best capture potential (minimize this risk).
+                let worst = 0;
+                for (const r of reply) worst = Math.max(worst, pieceValue[r.captured] || 0);
+                score -= worst * 0.8;
+            }
+        }
+
+        if (score > bestScore || (score === bestScore && Math.random() > 0.5)) {
+            bestScore = score;
+            best = m;
+        }
+    }
+    return best;
 }
 
