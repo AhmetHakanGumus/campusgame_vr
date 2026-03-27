@@ -425,7 +425,9 @@ applyPlatformDom();
         }
 
         function collectVRGrabbables() {
-            if (vrGrabbables.length) return;
+            // Not: VR satranç taşları oyun başlayınca sonradan scene'e ekleniyor.
+            // O yüzden listeyi sadece bir kere cache'lemek yerine her seferinde tazele.
+            vrGrabbables.length = 0;
             scene.traverse((o) => {
                 if (o.userData?.vrGrabbable) vrGrabbables.push(o);
             });
@@ -480,15 +482,54 @@ applyPlatformDom();
         }
 
         function makeVrChessPieceMesh(piece) {
-            const mat = new THREE.MeshLambertMaterial({ color: piece.color === 'w' ? 0xf4f1e8 : 0x222831 });
+            const mat = new THREE.MeshLambertMaterial({
+                color: piece.color === 'w' ? 0xf4f1e8 : 0x222831
+            });
             const g = new THREE.Group();
-            const h = 0.06;
-            if (piece.type === 'p') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, h, 14), mat));
-            else if (piece.type === 'r') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, h * 1.12, 14), mat));
-            else if (piece.type === 'n') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.028, h * 1.2, 14), mat));
-            else if (piece.type === 'b') g.add(new THREE.Mesh(new THREE.ConeGeometry(0.024, h * 1.22, 14), mat));
-            else if (piece.type === 'q') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.03, h * 1.45, 14), mat));
-            else g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, h * 1.52, 14), mat));
+
+            const add = (mesh, y) => {
+                mesh.position.y = y;
+                g.add(mesh);
+                return mesh;
+            };
+
+            // Base for all pieces (helps scale + readability)
+            add(new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.012, 16), mat), 0.006);
+
+            if (piece.type === 'p') {
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.032, 14), mat), 0.012 + 0.016);
+                add(new THREE.Mesh(new THREE.SphereGeometry(0.016, 14, 12), mat), 0.012 + 0.032 + 0.016);
+            } else if (piece.type === 'r') {
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.044, 14), mat), 0.012 + 0.022);
+                add(new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.018, 0.036), mat), 0.012 + 0.044 + 0.009);
+            } else if (piece.type === 'n') {
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.022, 0.038, 14), mat), 0.012 + 0.019);
+                const neck = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.028, 0.02), mat);
+                neck.rotation.y = Math.PI / 6;
+                add(neck, 0.012 + 0.038 + 0.014);
+                const head = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.03, 0.018), mat);
+                head.rotation.y = -Math.PI / 10;
+                add(head, 0.012 + 0.038 + 0.032);
+            } else if (piece.type === 'b') {
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.022, 0.042, 14), mat), 0.012 + 0.021);
+                add(new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.04, 14), mat), 0.012 + 0.042 + 0.02);
+                add(new THREE.Mesh(new THREE.SphereGeometry(0.010, 12, 10), mat), 0.012 + 0.042 + 0.04 + 0.01);
+            } else if (piece.type === 'q') {
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.026, 0.05, 14), mat), 0.012 + 0.025);
+                add(new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 8, 18), mat), 0.012 + 0.05 + 0.01);
+                add(new THREE.Mesh(new THREE.SphereGeometry(0.012, 14, 12), mat), 0.012 + 0.05 + 0.024);
+            } else {
+                // King
+                add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.026, 0.054, 14), mat), 0.012 + 0.027);
+                add(new THREE.Mesh(new THREE.SphereGeometry(0.012, 14, 12), mat), 0.012 + 0.054 + 0.012);
+                const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.022, 0.004), mat);
+                const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.004, 0.004), mat);
+                const cross = new THREE.Group();
+                cross.add(cross1);
+                cross.add(cross2);
+                add(cross, 0.012 + 0.054 + 0.026);
+            }
+
             g.traverse((o) => {
                 if (o.isMesh) {
                     o.castShadow = !IS_MOB;
@@ -501,7 +542,7 @@ applyPlatformDom();
         function createVrChess(mode = 'ai', aiLevel = 'normal') {
             const spot = SPOTS.find((s) => s.game === 'ch')?.pos || { x: 10, z: 42 };
             const root = new THREE.Group();
-            root.position.set(spot.x, 1.22, spot.z);
+            root.position.set(spot.x, 0.95, spot.z);
             scene.add(root);
 
             const sqSize = 0.22;
