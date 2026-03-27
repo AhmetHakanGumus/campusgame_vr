@@ -435,6 +435,12 @@ applyPlatformDom();
             scene.traverse((o) => {
                 if (o.userData?.vrGrabbable) vrGrabbables.push(o);
             });
+            // Satranç oynarken sadece taşlar tutulabilsin (işaret balonları vb. değil)
+            if (vrChess) {
+                for (let i = vrGrabbables.length - 1; i >= 0; i--) {
+                    if (!vrGrabbables[i].userData?.vrChessPiece) vrGrabbables.splice(i, 1);
+                }
+            }
         }
 
         function tryGrabObject(handedness) {
@@ -445,6 +451,10 @@ applyPlatformDom();
             if (!ctrl) return;
             if (handedness === 'left' && xrGrabbedLeft) return;
             if (handedness === 'right' && xrGrabbedRight) return;
+            // Aynı anda tek satranç taşı (iki elle toplama yok)
+            if (vrChess && (xrGrabbedLeft?.userData?.vrChessPiece || xrGrabbedRight?.userData?.vrChessPiece)) {
+                return;
+            }
             const origin = new THREE.Vector3();
             ctrl.getWorldPosition(origin);
             let best = null, bestDist = vrChess ? 3.0 : 1.15;
@@ -458,23 +468,24 @@ applyPlatformDom();
                 if (d < bestDist) { bestDist = d; best = o; }
             });
             if (!best) return;
+
             let heldData = null;
             if (vrChess && best.userData?.vrChessPiece) {
                 const from = best.userData.vrChessPiece;
                 const piece = vrChess.game.get(from);
                 if (!piece) return;
-                // AI modunda oyuncu sadece beyaz oynar.
                 if (piece.color !== vrChess.game.turn()) return;
                 if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
                 if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
                 const moves = vrChess.game.moves({ square: from, verbose: true }) || [];
                 heldData = { from, moves: moves.map((m) => m.to) };
             }
+
             best.userData.prevParent = best.parent;
             ctrl.attach(best);
             best.position.set(0, -0.03, -0.2);
             best.rotation.set(0, 0, 0);
-            if (vrChess && heldData) {
+            if (vrChess && best.userData?.vrChessPiece && heldData) {
                 vrChess.held = { mesh: best, from: heldData.from, moves: heldData.moves, hand: handedness };
                 setVrChessMarkers(vrChess.held.moves);
                 setVrChessSquareHighlight(heldData.from);
@@ -491,13 +502,21 @@ applyPlatformDom();
             } else {
                 scene.attach(grabbed);
             }
-            // Kontrolcü dönüşü taşa yansımasın — tahta üzerinde dik dursun
             if (grabbed.userData?.vrChessPiece) {
                 grabbed.rotation.set(0, 0, 0);
                 grabbed.quaternion.identity();
             }
-            if (vrChess && vrChess.held?.mesh === grabbed) {
-                onVrChessDrop(grabbed);
+
+            if (vrChess && grabbed.userData?.vrChessPiece) {
+                if (vrChess.held?.mesh === grabbed) {
+                    onVrChessDrop(grabbed);
+                } else {
+                    // Held kaydı yok/uyuşmuyor: hamle sayma, tahtayı yenile, süsleri sil
+                    vrChess.held = null;
+                    setVrChessMarkers([]);
+                    setVrChessSquareHighlight(null);
+                    rebuildVrChessPieces();
+                }
             }
             if (handedness === 'left') xrGrabbedLeft = null;
             else xrGrabbedRight = null;
@@ -733,12 +752,32 @@ applyPlatformDom();
             vrChess.highlight.visible = true;
         }
 
+        /** Çok havada veya tahta dışında bırakıldıysa hamle yok, taş eski yerine döner. */
+        function isAcceptableChessDropWorld(worldPos) {
+            if (!vrChess) return false;
+            const local = vrChess.root.worldToLocal(worldPos.clone());
+            const half = vrChess.sqSize * 4.2;
+            if (Math.abs(local.x) > half || Math.abs(local.z) > half) return false;
+            const yTop = vrChess.pieceY + 0.42;
+            const yBot = vrChess.boardY - 0.14;
+            return local.y >= yBot && local.y <= yTop;
+        }
+
         function onVrChessDrop(mesh) {
             const held = vrChess?.held;
             if (!held) return;
 
             const wp = new THREE.Vector3();
             mesh.getWorldPosition(wp);
+
+            if (!isAcceptableChessDropWorld(wp)) {
+                vrChess.held = null;
+                setVrChessMarkers([]);
+                setVrChessSquareHighlight(null);
+                rebuildVrChessPieces();
+                return;
+            }
+
             const from = held.from;
             const legal = held.moves || [];
             let to = nearestLegalDestFromWorld(wp, legal);
