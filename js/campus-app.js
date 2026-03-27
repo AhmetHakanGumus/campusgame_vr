@@ -170,10 +170,25 @@ applyPlatformDom();
                 }
                 startGame(activeSpot.game, activeSpot.id, activeSpot.title);
             });
-            xrCtrl0.addEventListener('squeezestart', () => tryGrabObject('left'));
-            xrCtrl0.addEventListener('squeezeend', () => releaseGrabbedObject('left'));
-            xrCtrl1.addEventListener('squeezestart', () => tryGrabObject('right'));
-            xrCtrl1.addEventListener('squeezeend', () => releaseGrabbedObject('right'));
+            function ctrl0Hand() { return xrControllerHands[0] || 'left'; }
+            function ctrl1Hand() { return xrControllerHands[1] || 'right'; }
+            xrCtrl0.addEventListener('squeezestart', () => tryGrabObject(ctrl0Hand()));
+            xrCtrl0.addEventListener('squeezeend', () => releaseGrabbedObject(ctrl0Hand()));
+            xrCtrl1.addEventListener('squeezestart', () => tryGrabObject(ctrl1Hand()));
+            xrCtrl1.addEventListener('squeezeend', () => releaseGrabbedObject(ctrl1Hand()));
+            // Trigger ile de bırakma (bazı cihazlarda grip yerine tetik kullanılır)
+            xrCtrl0.addEventListener('selectend', () => {
+                if (xrGrabbedLeft || xrGrabbedRight) {
+                    const h = vrChess?.held?.hand;
+                    if (h) releaseGrabbedObject(h);
+                }
+            });
+            xrCtrl1.addEventListener('selectend', () => {
+                if (xrGrabbedLeft || xrGrabbedRight) {
+                    const h = vrChess?.held?.hand;
+                    if (h) releaseGrabbedObject(h);
+                }
+            });
 
             /* ── 6) VR oturum olayları ───────────────── */
             renderer.xr.addEventListener('sessionstart', () => {
@@ -493,23 +508,29 @@ applyPlatformDom();
         }
 
         function releaseGrabbedObject(handedness) {
+            // Satranç taşı tutuluyorsa, handedness fark etmez — held'den bırak
+            if (vrChess?.held?.mesh) {
+                const mesh = vrChess.held.mesh;
+                xrGrabbedLeft = null;
+                xrGrabbedRight = null;
+                try {
+                    processChessDrop(mesh);
+                } catch (err) {
+                    console.error('VR chess release error:', err);
+                    try { mesh.removeFromParent(); } catch (e) { /* */ }
+                    vrChessCleanup();
+                }
+                return;
+            }
+            // Satranç dışı nesne
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
-
-            // Her zaman held referansını ve el referansını temizle
             if (handedness === 'left') xrGrabbedLeft = null;
             else xrGrabbedRight = null;
-
             try {
-                if (vrChess && grabbed.userData?.vrChessPiece) {
-                    processChessDrop(grabbed);
-                } else {
-                    scene.attach(grabbed);
-                }
+                scene.attach(grabbed);
             } catch (err) {
                 console.error('VR release error:', err);
-                try { grabbed.removeFromParent(); } catch (e) { /* */ }
-                vrChessCleanup();
             }
         }
 
@@ -1220,14 +1241,28 @@ applyPlatformDom();
                 if (src.handedness === 'left') setVRHandCurl(xrLeftHand, curlVal);
                 if (src.handedness === 'right') setVRHandCurl(xrRightHand, curlVal);
 
-                // Grip bırakıldı ama squeezeend gelmediyse (WebXR / tarayıcı farkı)
-                const sqPressed = squeezeVal > 0.45;
+                // Grip bırakıldı ama squeezeend gelmemiş olabilir — poll ile algıla
+                const sqPressed = squeezeVal > 0.35;
                 if (src.handedness === 'left') {
-                    if (xrPrevSqueezeLeft && !sqPressed && xrGrabbedLeft) releaseGrabbedObject('left');
+                    if (xrPrevSqueezeLeft && !sqPressed) {
+                        if (xrGrabbedLeft) releaseGrabbedObject('left');
+                    }
                     xrPrevSqueezeLeft = sqPressed;
                 } else if (src.handedness === 'right') {
-                    if (xrPrevSqueezeRight && !sqPressed && xrGrabbedRight) releaseGrabbedObject('right');
+                    if (xrPrevSqueezeRight && !sqPressed) {
+                        if (xrGrabbedRight) releaseGrabbedObject('right');
+                    }
                     xrPrevSqueezeRight = sqPressed;
+                }
+                // Satranç taşı tutuluyorsa ve her iki grip de bırakılmışsa güvenlik ağı
+                if (vrChess?.held && squeezeVal < 0.2 && triggerVal < 0.2) {
+                    const h = vrChess.held.hand;
+                    if (
+                        (h === 'left' && src.handedness === 'left' && !sqPressed) ||
+                        (h === 'right' && src.handedness === 'right' && !sqPressed)
+                    ) {
+                        releaseGrabbedObject(h);
+                    }
                 }
 
                 /* ── Sol el: Yürüyüş (baş yönünde) ────── */
