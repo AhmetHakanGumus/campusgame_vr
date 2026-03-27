@@ -436,13 +436,14 @@ applyPlatformDom();
         function tryGrabObject(handedness) {
             if (!xrActive) return;
             collectVRGrabbables();
-            const ctrl = handedness === 'left' ? xrCtrl0 : xrCtrl1;
+            // Grab pozisyonu: gerçek el/grip daha doğru
+            const ctrl = handedness === 'left' ? (xrGrip0 || xrCtrl0) : (xrGrip1 || xrCtrl1);
             if (!ctrl) return;
             if (handedness === 'left' && xrGrabbedLeft) return;
             if (handedness === 'right' && xrGrabbedRight) return;
             const origin = new THREE.Vector3();
             ctrl.getWorldPosition(origin);
-            let best = null, bestDist = vrChess ? 1.7 : 1.15;
+            let best = null, bestDist = vrChess ? 3.0 : 1.15;
             vrGrabbables.forEach((o) => {
                 const wp = new THREE.Vector3();
                 o.getWorldPosition(wp);
@@ -588,7 +589,7 @@ applyPlatformDom();
                     );
                     tile.rotation.x = -Math.PI / 2;
                     const p = sqToLocal(sq);
-                    tile.position.set(p.x, 0.02, p.z);
+                    tile.position.set(p.x, 0.015, p.z);
                     tile.receiveShadow = !IS_MOB;
                     root.add(tile);
                     squares.set(sq, tile);
@@ -634,7 +635,7 @@ applyPlatformDom();
                     // mesh root altında: local koordinat kullan
                     const file = 'abcdefgh'.indexOf(sq[0]);
                     const rank = Number(sq[1]) - 1;
-                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.075, (rank - 3.5) * vrChess.sqSize);
+                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.060, (rank - 3.5) * vrChess.sqSize);
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
                     vrChess.root.add(mesh);
