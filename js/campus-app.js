@@ -12,6 +12,7 @@ import { addUniversityMainGate, updateUniversityGateAnimations } from './univers
 import { getLeaderboard, saveScore, getRank } from './api.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { createMultiplayerClient } from './multiplayer.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 applyPlatformDom();
 
@@ -53,6 +54,7 @@ applyPlatformDom();
         let xrLeftHand = null, xrRightHand = null;
         let xrGrabbedLeft = null, xrGrabbedRight = null;
         const vrGrabbables = [];
+        let xrHandsLoaded = false;
 
         function startNonVRLoop() {
             if (mainRafId) return;
@@ -141,14 +143,7 @@ applyPlatformDom();
             /* ── 4) Controller grip modelleri (el) ────── */
             const grip0 = renderer.xr.getControllerGrip(0);
             const grip1 = renderer.xr.getControllerGrip(1);
-            const handGeo = new THREE.BoxGeometry(0.06, 0.08, 0.14);
-            const handMat = new THREE.MeshLambertMaterial({ color: 0x444466 });
-            grip0.add(new THREE.Mesh(handGeo, handMat));
-            grip1.add(new THREE.Mesh(handGeo, handMat));
-            xrLeftHand = createDetailedVRHand('left');
-            xrRightHand = createDetailedVRHand('right');
-            grip0.add(xrLeftHand.root);
-            grip1.add(xrRightHand.root);
+            initVRHands(grip0, grip1);
             xrRig.add(grip0);
             xrRig.add(grip1);
 
@@ -286,8 +281,78 @@ applyPlatformDom();
             return { root, fingers };
         }
 
+        function initVRHands(grip0, grip1) {
+            if (xrHandsLoaded) return;
+
+            const fallback = () => {
+                const handGeo = new THREE.BoxGeometry(0.06, 0.08, 0.14);
+                const handMat = new THREE.MeshLambertMaterial({ color: 0x444466 });
+                grip0.add(new THREE.Mesh(handGeo, handMat));
+                grip1.add(new THREE.Mesh(handGeo, handMat));
+                xrLeftHand = createDetailedVRHand('left');
+                xrRightHand = createDetailedVRHand('right');
+                grip0.add(xrLeftHand.root);
+                grip1.add(xrRightHand.root);
+            };
+
+            const loader = new FBXLoader();
+            const styleHandMaterials = (root) => {
+                root.traverse((o) => {
+                    if (!o.isMesh) return;
+                    o.material = new THREE.MeshStandardMaterial({
+                        color: 0xebcbb9,
+                        roughness: 0.72,
+                        metalness: 0
+                    });
+                    o.castShadow = false;
+                    o.receiveShadow = false;
+                });
+            };
+
+            const buildHand = (url, side) =>
+                new Promise((resolve, reject) => {
+                    loader.load(
+                        url,
+                        (fbx) => {
+                            styleHandMaterials(fbx);
+                            fbx.scale.setScalar(0.012);
+                            const handGroup = new THREE.Group();
+                            const wristPivot = new THREE.Group();
+                            handGroup.add(wristPivot);
+                            wristPivot.add(fbx);
+                            const bbox = new THREE.Box3().setFromObject(fbx);
+                            const center = new THREE.Vector3();
+                            bbox.getCenter(center);
+                            fbx.position.set(-center.x, -center.y, -center.z);
+                            handGroup.position.set(0, -0.014, 0.006);
+                            wristPivot.rotation.set(
+                                Math.PI / 2,
+                                Math.PI,
+                                side === 'left' ? 0.10 : -0.10
+                            );
+                            resolve(handGroup);
+                        },
+                        undefined,
+                        reject
+                    );
+                });
+
+            Promise.all([
+                buildHand('/models/LeftHand.fbx', 'left'),
+                buildHand('/models/RightHand.fbx', 'right')
+            ])
+                .then(([leftHand, rightHand]) => {
+                    xrLeftHand = leftHand;
+                    xrRightHand = rightHand;
+                    grip0.add(leftHand);
+                    grip1.add(rightHand);
+                    xrHandsLoaded = true;
+                })
+                .catch(() => fallback());
+        }
+
         function setVRHandCurl(hand, amount) {
-            if (!hand) return;
+            if (!hand || !hand.fingers) return;
             const curl = Math.max(0, Math.min(1, amount));
             hand.fingers.forEach((f) => {
                 const a = f.isThumb ? (0.6 * curl) : (1.15 * curl);
