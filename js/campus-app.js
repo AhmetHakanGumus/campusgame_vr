@@ -60,6 +60,7 @@ applyPlatformDom();
         let xrGrip0 = null;
         let xrGrip1 = null;
         let xrRaycaster = null;
+        let xrControllerHands = { 0: null, 1: null };
         let xrSupported = false;
         let xrLeftHand = null, xrRightHand = null;
         let xrGrabbedLeft = null, xrGrabbedRight = null;
@@ -67,6 +68,7 @@ applyPlatformDom();
         let xrHandsLoaded = false;
         let rebindVRHands = () => {};
         let vrChess = null;
+        const VR_EYE_HEIGHT_BOOST = 0.22;
 
         function startNonVRLoop() {
             if (mainRafId) return;
@@ -125,7 +127,7 @@ applyPlatformDom();
             xrRig = new THREE.Group();
             xrRig.position.set(
                 player ? player.position.x : 0,
-                0,
+                VR_EYE_HEIGHT_BOOST,
                 player ? player.position.z : 108
             );
             scene.add(xrRig);
@@ -194,7 +196,7 @@ applyPlatformDom();
                     targetYaw = Math.PI;
                 }
 
-                xrRig.position.set(targetX, 0, targetZ);
+                xrRig.position.set(targetX, VR_EYE_HEIGHT_BOOST, targetZ);
                 xrRig.rotation.y = targetYaw;
                 playerYaw = targetYaw;
 
@@ -358,29 +360,28 @@ applyPlatformDom();
             const attachByController = (controllerIndex, handedness) => {
                 const h = String(handedness || '').toLowerCase();
                 if (h !== 'left' && h !== 'right') return;
+                xrControllerHands[controllerIndex] = h;
                 const grip = controllerIndex === 0 ? grip0 : grip1;
                 const hand = h === 'left' ? xrLeftHand : xrRightHand;
                 attachToGrip(hand, grip);
             };
             rebindVRHands = () => {
                 if (!xrHandsLoaded) return;
-                let foundAny = false;
-                const session = renderer?.xr?.getSession?.();
-                if (session?.inputSources?.length) {
-                    session.inputSources.forEach((src) => {
-                        const h = String(src?.handedness || '').toLowerCase();
-                        if (h !== 'left' && h !== 'right') return;
-                        if (src.targetRaySpace === xrCtrl0) {
-                            attachByController(0, h);
-                            foundAny = true;
-                        } else if (src.targetRaySpace === xrCtrl1) {
-                            attachByController(1, h);
-                            foundAny = true;
-                        }
-                    });
+                const h0 = xrControllerHands[0];
+                const h1 = xrControllerHands[1];
+                const dup = h0 && h1 && h0 === h1;
+                if (!dup) {
+                    if (h0 === 'left') attachToGrip(xrLeftHand, grip0);
+                    else if (h0 === 'right') attachToGrip(xrRightHand, grip0);
+                    if (h1 === 'left') attachToGrip(xrLeftHand, grip1);
+                    else if (h1 === 'right') attachToGrip(xrRightHand, grip1);
+                } else {
+                    // Bazı cihazlar geçici olarak iki kontrolcüyü aynı handedness verebiliyor.
+                    attachToGrip(xrLeftHand, grip0);
+                    attachToGrip(xrRightHand, grip1);
                 }
-                if (!foundAny) {
-                    // Fallback: ilk düzeni koru.
+                // Hiç veri yoksa başlangıç düzenine dön.
+                if (!h0 && !h1) {
                     attachToGrip(xrLeftHand, grip0);
                     attachToGrip(xrRightHand, grip1);
                 }
@@ -401,6 +402,12 @@ applyPlatformDom();
                     });
                     xrCtrl1.addEventListener('connected', (ev) => {
                         attachByController(1, ev?.data?.handedness);
+                    });
+                    xrCtrl0.addEventListener('disconnected', () => {
+                        xrControllerHands[0] = null;
+                    });
+                    xrCtrl1.addEventListener('disconnected', () => {
+                        xrControllerHands[1] = null;
                     });
                 })
                 .catch(() => fallback());
