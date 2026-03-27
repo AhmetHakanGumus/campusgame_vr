@@ -497,29 +497,43 @@ applyPlatformDom();
         function releaseGrabbedObject(handedness) {
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
-            if (grabbed.userData?.vrChessPiece && vrChess?.root) {
-                vrChess.root.attach(grabbed);
-            } else {
-                scene.attach(grabbed);
-            }
-            if (grabbed.userData?.vrChessPiece) {
-                grabbed.rotation.set(0, 0, 0);
-                grabbed.quaternion.identity();
-            }
-
-            if (vrChess && grabbed.userData?.vrChessPiece) {
-                if (vrChess.held?.mesh === grabbed) {
-                    onVrChessDrop(grabbed);
+            try {
+                if (grabbed.userData?.vrChessPiece && vrChess?.root) {
+                    vrChess.root.attach(grabbed);
                 } else {
-                    // Held kaydı yok/uyuşmuyor: hamle sayma, tahtayı yenile, süsleri sil
-                    vrChess.held = null;
-                    setVrChessMarkers([]);
-                    setVrChessSquareHighlight(null);
-                    rebuildVrChessPieces();
+                    scene.attach(grabbed);
                 }
+                if (grabbed.userData?.vrChessPiece) {
+                    grabbed.rotation.set(0, 0, 0);
+                    grabbed.quaternion.identity();
+                }
+
+                if (vrChess && grabbed.userData?.vrChessPiece) {
+                    if (vrChess.held?.mesh === grabbed) {
+                        onVrChessDrop(grabbed);
+                    } else {
+                        vrChess.held = null;
+                        setVrChessMarkers([]);
+                        setVrChessSquareHighlight(null);
+                        rebuildVrChessPieces();
+                    }
+                }
+            } catch (err) {
+                console.error('VR bırakma (satranç):', err);
+                if (vrChess) {
+                    vrChess.held = null;
+                    try {
+                        setVrChessMarkers([]);
+                        setVrChessSquareHighlight(null);
+                        rebuildVrChessPieces();
+                    } catch (e2) {
+                        console.error('VR satranç kurtarma:', e2);
+                    }
+                }
+            } finally {
+                if (handedness === 'left') xrGrabbedLeft = null;
+                else xrGrabbedRight = null;
             }
-            if (handedness === 'left') xrGrabbedLeft = null;
-            else xrGrabbedRight = null;
         }
 
         function makeVrChessPieceMesh(piece) {
@@ -752,15 +766,19 @@ applyPlatformDom();
             vrChess.highlight.visible = true;
         }
 
-        /** Çok havada veya tahta dışında bırakıldıysa hamle yok, taş eski yerine döner. */
+        /** Tahta dışı veya belirgin şekilde havada bırakıldıysa hamle yok. Yükseklik aralığı geniş (VR duruş farkı). */
         function isAcceptableChessDropWorld(worldPos) {
             if (!vrChess) return false;
-            const local = vrChess.root.worldToLocal(worldPos.clone());
-            const half = vrChess.sqSize * 4.2;
-            if (Math.abs(local.x) > half || Math.abs(local.z) > half) return false;
-            const yTop = vrChess.pieceY + 0.42;
-            const yBot = vrChess.boardY - 0.14;
-            return local.y >= yBot && local.y <= yTop;
+            try {
+                const local = vrChess.root.worldToLocal(worldPos.clone());
+                const half = vrChess.sqSize * 4.25;
+                if (Math.abs(local.x) > half || Math.abs(local.z) > half) return false;
+                const yTop = vrChess.pieceY + 1.15;
+                const yBot = vrChess.boardY - 0.35;
+                return local.y >= yBot && local.y <= yTop;
+            } catch (e) {
+                return true;
+            }
         }
 
         function onVrChessDrop(mesh) {
@@ -787,30 +805,37 @@ applyPlatformDom();
             }
             let moved = false;
 
-            if (to && to !== from && legal.includes(to)) {
-                let mv = null;
-                try {
-                    mv = vrChess.game.move({ from, to, promotion: 'q' });
-                } catch (e) {
-                    mv = null;
+            try {
+                if (to && to !== from && legal.includes(to)) {
+                    let mv = null;
+                    try {
+                        mv = vrChess.game.move({ from, to, promotion: 'q' });
+                    } catch (e) {
+                        mv = null;
+                    }
+                    moved = !!mv;
+                    if (moved && mpClient && vrChess.mode === 'pvp') {
+                        mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
+                    }
                 }
-                moved = !!mv;
-                if (moved && mpClient && vrChess.mode === 'pvp') {
-                    mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
-                }
+            } catch (err) {
+                console.error('VR satranç hamlesi:', err);
+                moved = false;
             }
 
-            // Temizle (ne olursa olsun)
             vrChess.held = null;
             setVrChessMarkers([]);
             setVrChessSquareHighlight(null);
-            rebuildVrChessPieces();
+            try {
+                rebuildVrChessPieces();
+            } catch (err) {
+                console.error('VR satranç tahta yenileme:', err);
+            }
 
-            if (!moved) return;
+            if (!moved || !vrChess) return;
 
             if (vrChess.game.isGameOver()) {
                 endGame(vrChess.game.isCheckmate() ? 50 : 0);
-                return;
             }
         }
 
