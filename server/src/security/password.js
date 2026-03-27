@@ -18,6 +18,10 @@ export async function hashPassword(plainPassword) {
 
 export async function verifyPassword(plainPassword, passwordHash) {
     const preHashed = pepperedHmacSha256(plainPassword);
-    return argon2.verify(passwordHash, preHashed);
+    try {
+        return await argon2.verify(passwordHash, preHashed);
+    } catch {
+        return false;
+    }
 }
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import bcrypt from 'bcrypt';
 import { pool } from './db.js';
 import { hashPassword, verifyPassword } from './security/password.js';
 import { createLoginSession, isUsernameOnline } from './session.store.js';
@@ -60,7 +61,21 @@ router.post('/login', async (req, res) => {
             return res.status(409).json({ message: 'Bu hesap şu anda çevrimiçi. İkinci oturum açılamaz.' });
         }
 
-        const isMatch = await verifyPassword(String(password), user.password_hash);
+        let isMatch = false;
+        const plainPassword = String(password);
+        const existingHash = String(user.password_hash || '');
+
+        // Backward compatibility for existing bcrypt hashes.
+        if (existingHash.startsWith('$2a$') || existingHash.startsWith('$2b$') || existingHash.startsWith('$2y$')) {
+            isMatch = await bcrypt.compare(plainPassword, existingHash);
+            if (isMatch) {
+                // Opportunistic migration: upgrade hash to argon2id on successful login.
+                const upgradedHash = await hashPassword(plainPassword);
+                await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [upgradedHash, user.id]);
+            }
+        } else {
+            isMatch = await verifyPassword(plainPassword, existingHash);
+        }
 
         if (!isMatch) {
             return res.status(401).json({ message: 'Geçersiz kullanıcı adı veya şifre.' });
