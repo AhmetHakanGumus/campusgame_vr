@@ -446,7 +446,10 @@ applyPlatformDom();
             vrGrabbables.forEach((o) => {
                 const wp = new THREE.Vector3();
                 o.getWorldPosition(wp);
-                const d = origin.distanceTo(wp);
+                // VR satrançta el yüksekliği değişken: yatay mesafeyle seç.
+                const d = vrChess
+                    ? Math.sqrt((origin.x - wp.x) ** 2 + (origin.z - wp.z) ** 2)
+                    : origin.distanceTo(wp);
                 if (d < bestDist) { bestDist = d; best = o; }
             });
             if (!best) return;
@@ -585,7 +588,7 @@ applyPlatformDom();
                     );
                     tile.rotation.x = -Math.PI / 2;
                     const p = sqToLocal(sq);
-                    tile.position.set(p.x, 0.03, p.z);
+                    tile.position.set(p.x, 0.02, p.z);
                     tile.receiveShadow = !IS_MOB;
                     root.add(tile);
                     squares.set(sq, tile);
@@ -631,7 +634,7 @@ applyPlatformDom();
                     // mesh root altında: local koordinat kullan
                     const file = 'abcdefgh'.indexOf(sq[0]);
                     const rank = Number(sq[1]) - 1;
-                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.12, (rank - 3.5) * vrChess.sqSize);
+                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.075, (rank - 3.5) * vrChess.sqSize);
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
                     vrChess.root.add(mesh);
