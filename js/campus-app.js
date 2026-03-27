@@ -68,7 +68,7 @@ applyPlatformDom();
         let xrHandsLoaded = false;
         let rebindVRHands = () => {};
         let vrChess = null;
-        const VR_EYE_HEIGHT_BOOST = 0.22;
+        const VR_EYE_HEIGHT_BOOST = 0.44;
 
         function startNonVRLoop() {
             if (mainRafId) return;
@@ -551,7 +551,8 @@ applyPlatformDom();
         function createVrChess(mode = 'ai', aiLevel = 'normal') {
             const spot = SPOTS.find((s) => s.game === 'ch')?.pos || { x: 10, z: 42 };
             const root = new THREE.Group();
-            root.position.set(spot.x, 0.95, spot.z);
+            // Tahtayı masanın üstüne al
+            root.position.set(spot.x, 1.35, spot.z);
             scene.add(root);
 
             const sqSize = 0.22;
@@ -584,7 +585,7 @@ applyPlatformDom();
                     );
                     tile.rotation.x = -Math.PI / 2;
                     const p = sqToLocal(sq);
-                    tile.position.set(p.x, 0.001, p.z);
+                    tile.position.set(p.x, 0.03, p.z);
                     tile.receiveShadow = !IS_MOB;
                     root.add(tile);
                     squares.set(sq, tile);
@@ -627,9 +628,10 @@ applyPlatformDom();
                     if (!piece) continue;
                     const sq = `${'abcdefgh'[f]}${8 - r}`;
                     const mesh = makeVrChessPieceMesh(piece);
-                    const p = sqToWorld(sq);
-                    mesh.position.copy(p);
-                    mesh.position.y = vrChess.root.position.y + 0.12;
+                    // mesh root altında: local koordinat kullan
+                    const file = 'abcdefgh'.indexOf(sq[0]);
+                    const rank = Number(sq[1]) - 1;
+                    mesh.position.set((file - 3.5) * vrChess.sqSize, 0.12, (rank - 3.5) * vrChess.sqSize);
                     mesh.userData.vrGrabbable = true;
                     mesh.userData.vrChessPiece = sq;
                     vrChess.root.add(mesh);
