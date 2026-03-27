@@ -1240,11 +1240,12 @@ applyPlatformDom();
             document.getElementById('ip-yes').addEventListener('click', () => {
                 if (!activeSpot) return;
                 document.getElementById('interact-prompt').style.display = 'none';
-                if (isLocked && document.exitPointerLock) document.exitPointerLock();
                 if (activeSpot.game === 'ch') {
+                    if (isLocked && document.exitPointerLock) document.exitPointerLock();
                     openChessModeMenu(activeSpot);
                     return;
                 }
+                if (isLocked && document.exitPointerLock) document.exitPointerLock();
                 startGame(activeSpot.game, activeSpot.id, activeSpot.title);
             });
             document.getElementById('ip-no').addEventListener('click', () => {
@@ -1553,8 +1554,15 @@ applyPlatformDom();
 
         function updateVrChessPlayButton() {
             if (!vrChessPlayBtn) return;
-            const shouldShow = xrActive && !G.gameRunning && activeSpot?.game === 'ch';
-            pendingChessSpot = shouldShow ? activeSpot : pendingChessSpot;
+            const chessSpot = SPOTS.find((s) => s.game === 'ch') || null;
+            let nearChess = false;
+            if (xrActive && !G.gameRunning && chessSpot && player) {
+                const dx = player.position.x - chessSpot.pos.x;
+                const dz = player.position.z - chessSpot.pos.z;
+                nearChess = Math.sqrt(dx * dx + dz * dz) < Math.max(9, CFG.interactDist + 2);
+            }
+            const shouldShow = nearChess;
+            pendingChessSpot = shouldShow ? chessSpot : pendingChessSpot;
             vrChessPlayBtn.style.display = shouldShow ? 'block' : 'none';
             if (!shouldShow) closeChessModeMenu();
         }
