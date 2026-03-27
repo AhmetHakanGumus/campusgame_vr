@@ -1966,7 +1966,12 @@ applyPlatformDom();
         function setupMiniGames() { setupScoreModal(); }
 
         function startGame(type, id, title, options = {}) {
-            G.gameRunning = true; currentGameId = id; currentGameTitle = title;
+            // Not: VR satrançta createVrChess hata verirse NPC'ler durup oyun boş kalmasın diye
+            // gameRunning'i satranç kurulumundan sonra kesinleştiriyoruz.
+            const startingVrChess = type === 'ch' && xrActive;
+            if (!startingVrChess) G.gameRunning = true;
+            currentGameId = id;
+            currentGameTitle = title;
             closeChessModeMenu();
             if (IS_MOB) {
                 resetJoy(); LOOK.active = false; LOOK.id = -1;
@@ -2005,9 +2010,21 @@ applyPlatformDom();
             } else if (type === 'ch' && xrActive) {
                 const mode = options.mode || 'ai';
                 const aiLevel = options.aiLevel || 'normal';
-                currentGame = { mode, destroy() {} };
-                createVrChess(mode, aiLevel);
-                if (mode === 'pvp') mpClient?.joinChess?.();
+                try {
+                    // Her başlangıçta temiz kurulum
+                    clearVrChess();
+                    currentGame = { mode, destroy() {} };
+                    createVrChess(mode, aiLevel);
+                    if (mode === 'pvp') mpClient?.joinChess?.();
+                    G.gameRunning = true;
+                } catch (err) {
+                    console.error('VR chess start failed:', err);
+                    clearVrChess();
+                    currentGame = null;
+                    G.gameRunning = false;
+                    // VR'da alert/confirm kullanmıyoruz; UI zaten ekranda.
+                    return;
+                }
             }
 
             currentGame?.start?.();
