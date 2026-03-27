@@ -68,6 +68,8 @@ applyPlatformDom();
         /** squeeze olayları bazı runtime'larda kaçırılabiliyor; poll ile yedeklenir */
         let xrPrevSqueezeLeft = false;
         let xrPrevSqueezeRight = false;
+        /** VR satranç: tetik yükselen kenar (kaynak kare → hedef kare) */
+        const xrChessTrigPrev = { left: false, right: false };
         const vrGrabbables = [];
         let xrHandsLoaded = false;
         let rebindVRHands = () => {};
@@ -454,8 +456,7 @@ applyPlatformDom();
 
         function tryGrabObject(handedness) {
             if (!xrActive) return;
-            // Zaten bir satranç taşı tutuluyorsa ikincisine izin verme
-            if (vrChess && vrChess.held) return;
+            if (vrChess) return;
             if (handedness === 'left' && xrGrabbedLeft) return;
             if (handedness === 'right' && xrGrabbedRight) return;
 
@@ -590,6 +591,7 @@ applyPlatformDom();
         function vrChessCleanup() {
             if (!vrChess) return;
             vrChess.held = null;
+            vrChess.pendingFrom = null;
             try { setVrChessMarkers([]); } catch (e) { /* */ }
             try { setVrChessSquareHighlight(null); } catch (e) { /* */ }
             try { rebuildVrChessPieces(); } catch (e) { /* */ }
@@ -719,6 +721,7 @@ applyPlatformDom();
                 markers,
                 highlight,
                 held: null,
+                pendingFrom: null,
                 sqToLocal
             };
             vrChess = state;
@@ -828,6 +831,69 @@ applyPlatformDom();
             const p = vrChess.sqToLocal(sq);
             vrChess.highlight.position.set(p.x, vrChess.boardY + 0.001, p.z);
             vrChess.highlight.visible = true;
+        }
+
+        /** Kontrolcü ışını ile tahta karesi (karo mesh'lerine raycast) */
+        function squareFromControllerRay(ctrl) {
+            if (!vrChess || !ctrl || !xrRaycaster) return null;
+            const tiles = Array.from(vrChess.squares.values());
+            if (!tiles.length) return null;
+            const origin = new THREE.Vector3();
+            const dir = new THREE.Vector3();
+            ctrl.getWorldPosition(origin);
+            ctrl.getWorldDirection(dir);
+            dir.negate();
+            xrRaycaster.set(origin, dir);
+            const hits = xrRaycaster.intersectObjects(tiles, false);
+            if (!hits.length) return null;
+            return nearestSqFromWorld(hits[0].point);
+        }
+
+        /** Tetik: önce sıradaki taşın karesi, sonra hedef kare (aynı kare = iptal) */
+        function handleVrChessSquarePick(sq) {
+            if (!vrChess || !sq || !G.gameRunning) return;
+            const game = vrChess.game;
+            if (game.isGameOver()) return;
+            if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
+
+            const turn = game.turn();
+            if (!vrChess.pendingFrom) {
+                const piece = game.get(sq);
+                if (!piece || piece.color !== turn) return;
+                if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
+                const moves = game.moves({ square: sq, verbose: true }) || [];
+                const targets = moves.map((m) => m.to);
+                vrChess.pendingFrom = sq;
+                setVrChessMarkers(targets);
+                setVrChessSquareHighlight(sq);
+                return;
+            }
+
+            const from = vrChess.pendingFrom;
+            if (sq === from) {
+                vrChess.pendingFrom = null;
+                setVrChessMarkers([]);
+                setVrChessSquareHighlight(null);
+                return;
+            }
+
+            let moved = false;
+            try {
+                const mv = game.move({ from, to: sq, promotion: 'q' });
+                moved = !!mv;
+                if (moved && mpClient && vrChess.mode === 'pvp') {
+                    mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
+                }
+            } catch (e) { moved = false; }
+
+            vrChess.pendingFrom = null;
+            setVrChessMarkers([]);
+            setVrChessSquareHighlight(null);
+            rebuildVrChessPieces();
+
+            if (moved && game.isGameOver()) {
+                endGame(game.isCheckmate() ? 50 : 0);
+            }
         }
 
         /* VR sırasında HTML UI'ı gizle/göster */
@@ -1232,11 +1298,33 @@ applyPlatformDom();
             const session = renderer.xr.getSession();
             if (!session) return;
 
+            if (!vrChess || !G.gameRunning) {
+                xrChessTrigPrev.left = false;
+                xrChessTrigPrev.right = false;
+            }
+
+            let vrChessPickUsed = false;
             for (const src of session.inputSources) {
                 const gp = src.gamepad;
                 if (!gp) continue;
                 const triggerVal = gp.buttons?.[0]?.value || 0;
                 const squeezeVal = gp.buttons?.[1]?.value || 0;
+
+                if (vrChess && G.gameRunning && (src.handedness === 'left' || src.handedness === 'right')) {
+                    const trig = triggerVal > 0.45;
+                    const side = src.handedness;
+                    if (!xrChessTrigPrev[side] && trig && !vrChessPickUsed) {
+                        const ctrl = side === 'left' ? xrCtrl0 : xrCtrl1;
+                        if (ctrl) {
+                            const sq = squareFromControllerRay(ctrl);
+                            if (sq) {
+                                handleVrChessSquarePick(sq);
+                                vrChessPickUsed = true;
+                            }
+                        }
+                    }
+                    xrChessTrigPrev[side] = trig;
+                }
                 const curlVal = Math.max(triggerVal, squeezeVal);
                 if (src.handedness === 'left') setVRHandCurl(xrLeftHand, curlVal);
                 if (src.handedness === 'right') setVRHandCurl(xrRightHand, curlVal);
