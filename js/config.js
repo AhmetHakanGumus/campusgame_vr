@@ -35,6 +35,7 @@ export const SPOTS = [
     { id: 'penalti', icon: '⚽', title: 'Penaltı Atışı', sub: 'BESYO spor alanında', pos: { x: -42, z: -78 }, game: 'ft' },
     { id: 'okculuk', icon: '🏹', title: 'Okçuluk', sub: 'Fen-Edebiyat yanı okçuluk pisti', pos: { x: -70, z: 28 }, game: 'ok' },
     { id: 'basket', icon: '🏀', title: 'Basketbol', sub: 'Yurt A karşısı basketbol sahası', pos: { x: -72, z: -44 }, game: 'bk' },
+    { id: 'satranc', icon: '♟️', title: 'Satranç', sub: 'Yemekhane önündeki satranç alanı', pos: { x: 10, z: 42 }, game: 'ch' }
 ];
 
 export const NPC_COLORS = [0xe74c3c, 0x2ecc71, 0x3498db, 0x9b59b6, 0xe67e22, 0x1abc9c, 0xf39c12, 0x27ae60, 0xe91e63, 0x00bcd4, 0xff5722, 0x607d8b];

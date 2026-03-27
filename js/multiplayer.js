@@ -33,10 +33,25 @@ export function createMultiplayerClient({ nickname, username, sessionToken }, ha
     socket.on('auth-error', ({ message }) => {
         handlers.onAuthError?.(message || 'Oturum hatası');
     });
+    socket.on('chess-ready', (payload) => {
+        handlers.onChessReady?.(payload);
+    });
+    socket.on('chess-move', (payload) => {
+        handlers.onChessMove?.(payload);
+    });
+    socket.on('chess-ended', (payload) => {
+        handlers.onChessEnded?.(payload);
+    });
 
     return {
         sendMove(state) {
             socket.emit('player-move', state);
+        },
+        joinChess() {
+            socket.emit('chess-join');
+        },
+        sendChessMove(move) {
+            socket.emit('chess-move', move);
         },
         disconnect() {
             socket.disconnect();

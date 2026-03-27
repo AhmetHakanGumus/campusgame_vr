@@ -7,12 +7,14 @@ import {
 import { applyPlatformDom } from './platform.js';
 import { initAudio, playBowDraw, playArrowShoot, playMurmur, playBeep, audio } from './audio.js';
 import { TableTennis, FlappyBird, Penalti, Archery, Basketball } from './minigames/games.js';
+import { ChessGame } from './minigames/chess-game.js';
 import { G } from './runtime.js';
 import { addUniversityMainGate, updateUniversityGateAnimations } from './university-gate.js';
 import { getLeaderboard, saveScore, getRank } from './api.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { createMultiplayerClient } from './multiplayer.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { Chess } from 'chess.js';
 
 applyPlatformDom();
 
@@ -58,6 +60,7 @@ applyPlatformDom();
         const vrGrabbables = [];
         let xrHandsLoaded = false;
         let rebindVRHands = () => {};
+        let vrChess = null;
 
         function startNonVRLoop() {
             if (mainRafId) return;
@@ -127,15 +130,7 @@ applyPlatformDom();
             xrRig.add(xrCtrl0);
             xrRig.add(xrCtrl1);
 
-            // Kontrolcü görselleri: ince tutacak (ray kapatildi)
-            const ctrlGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.18, 8);
-            const ctrlMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
-            [xrCtrl0, xrCtrl1].forEach(ctrl => {
-                const mesh = new THREE.Mesh(ctrlGeo, ctrlMat);
-                mesh.rotation.x = Math.PI / 2;
-                mesh.position.z = -0.09;
-                ctrl.add(mesh);
-            });
+            // Kontrolcü debug mesh/ray gizli tutuluyor.
 
             /* ── 4) Controller grip modelleri (el) ────── */
             xrGrip0 = renderer.xr.getControllerGrip(0);
@@ -432,6 +427,18 @@ applyPlatformDom();
             ctrl.attach(best);
             best.position.set(0, -0.03, -0.2);
             best.rotation.set(0, 0, 0);
+            if (vrChess && best.userData?.vrChessPiece) {
+                const from = best.userData.vrChessPiece;
+                const piece = vrChess.game.get(from);
+                if (!piece) return;
+                if (piece.color !== vrChess.game.turn()) return;
+                if (vrChess.mode === 'pvp' && vrChess.side && piece.color !== vrChess.side) return;
+                if (vrChess.mode === 'pvp' && vrChess.waitingOpponent) return;
+                const moves = vrChess.game.moves({ square: from, verbose: true }) || [];
+                vrChess.held = { mesh: best, from, moves: moves.map((m) => m.to), hand: handedness };
+                setVrChessMarkers(vrChess.held.moves);
+                setVrChessSquareHighlight(from);
+            }
             if (handedness === 'left') xrGrabbedLeft = best;
             else xrGrabbedRight = best;
         }
@@ -440,8 +447,210 @@ applyPlatformDom();
             const grabbed = handedness === 'left' ? xrGrabbedLeft : xrGrabbedRight;
             if (!grabbed) return;
             scene.attach(grabbed);
+            if (vrChess && grabbed.userData?.vrChessPiece && vrChess.held?.mesh === grabbed) {
+                onVrChessDrop(grabbed);
+            }
             if (handedness === 'left') xrGrabbedLeft = null;
             else xrGrabbedRight = null;
+        }
+
+        function makeVrChessPieceMesh(piece) {
+            const mat = new THREE.MeshLambertMaterial({ color: piece.color === 'w' ? 0xf4f1e8 : 0x222831 });
+            const g = new THREE.Group();
+            const h = 0.06;
+            if (piece.type === 'p') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, h, 14), mat));
+            else if (piece.type === 'r') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, h * 1.12, 14), mat));
+            else if (piece.type === 'n') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.028, h * 1.2, 14), mat));
+            else if (piece.type === 'b') g.add(new THREE.Mesh(new THREE.ConeGeometry(0.024, h * 1.22, 14), mat));
+            else if (piece.type === 'q') g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.03, h * 1.45, 14), mat));
+            else g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, h * 1.52, 14), mat));
+            g.traverse((o) => {
+                if (o.isMesh) {
+                    o.castShadow = !IS_MOB;
+                    o.receiveShadow = !IS_MOB;
+                }
+            });
+            return g;
+        }
+
+        function createVrChess(mode = 'ai') {
+            const spot = SPOTS.find((s) => s.game === 'ch')?.pos || { x: 10, z: 42 };
+            const root = new THREE.Group();
+            root.position.set(spot.x, 1.22, spot.z);
+            scene.add(root);
+
+            const sqSize = 0.22;
+            const squares = new Map();
+            const markers = [];
+            const markerMat = new THREE.MeshBasicMaterial({ color: 0x21354d, transparent: true, opacity: 0.72 });
+            const highlight = new THREE.Mesh(
+                new THREE.PlaneGeometry(sqSize * 0.92, sqSize * 0.92),
+                new THREE.MeshBasicMaterial({ color: 0x4ca4ff, transparent: true, opacity: 0.36, side: THREE.DoubleSide })
+            );
+            highlight.rotation.x = -Math.PI / 2;
+            highlight.visible = false;
+            root.add(highlight);
+
+            function sqToLocal(sq) {
+                const f = 'abcdefgh'.indexOf(sq[0]);
+                const r = Number(sq[1]) - 1;
+                const x = (f - 3.5) * sqSize;
+                const z = (r - 3.5) * sqSize;
+                return new THREE.Vector3(x, 0, z);
+            }
+
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const sq = `${'abcdefgh'[f]}${r + 1}`;
+                    const light = (r + f) % 2 === 0;
+                    const tile = new THREE.Mesh(
+                        new THREE.PlaneGeometry(sqSize * 0.98, sqSize * 0.98),
+                        new THREE.MeshLambertMaterial({ color: light ? 0xe8d9bd : 0x8b6b4a })
+                    );
+                    tile.rotation.x = -Math.PI / 2;
+                    const p = sqToLocal(sq);
+                    tile.position.set(p.x, 0.001, p.z);
+                    tile.receiveShadow = !IS_MOB;
+                    root.add(tile);
+                    squares.set(sq, tile);
+                }
+            }
+
+            const state = {
+                root,
+                mode,
+                game: new Chess(),
+                side: 'w',
+                waitingOpponent: mode === 'pvp',
+                sqSize,
+                squares,
+                pieces: new Map(),
+                markers,
+                highlight,
+                held: null
+            };
+            vrChess = state;
+            rebuildVrChessPieces();
+            return state;
+        }
+
+        function clearVrChess() {
+            if (!vrChess) return;
+            vrChess.root.removeFromParent();
+            vrChess = null;
+        }
+
+        function rebuildVrChessPieces() {
+            if (!vrChess) return;
+            vrChess.pieces.forEach((m) => m.removeFromParent());
+            vrChess.pieces.clear();
+            const board = vrChess.game.board();
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const piece = board[r][f];
+                    if (!piece) continue;
+                    const sq = `${'abcdefgh'[f]}${8 - r}`;
+                    const mesh = makeVrChessPieceMesh(piece);
+                    const p = sqToWorld(sq);
+                    mesh.position.copy(p);
+                    mesh.userData.vrGrabbable = true;
+                    mesh.userData.vrChessPiece = sq;
+                    scene.add(mesh);
+                    vrChess.pieces.set(sq, mesh);
+                }
+            }
+        }
+
+        function sqToWorld(sq) {
+            const f = 'abcdefgh'.indexOf(sq[0]);
+            const r = Number(sq[1]) - 1;
+            const x = vrChess.root.position.x + (f - 3.5) * vrChess.sqSize;
+            const z = vrChess.root.position.z + (r - 3.5) * vrChess.sqSize;
+            return new THREE.Vector3(x, vrChess.root.position.y + 0.06, z);
+        }
+
+        function nearestSqFromWorld(pos) {
+            let best = null;
+            let bestD = Infinity;
+            for (let r = 1; r <= 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const sq = `${'abcdefgh'[f]}${r}`;
+                    const p = sqToWorld(sq);
+                    const d = p.distanceTo(pos);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = sq;
+                    }
+                }
+            }
+            return bestD <= vrChess.sqSize * 0.85 ? best : null;
+        }
+
+        function setVrChessMarkers(targetSquares = []) {
+            if (!vrChess) return;
+            vrChess.markers.forEach((m) => m.removeFromParent());
+            vrChess.markers = [];
+            targetSquares.forEach((sq) => {
+                const p = sqToWorld(sq);
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 10), new THREE.MeshBasicMaterial({ color: 0x1f2f44, transparent: true, opacity: 0.8 }));
+                dot.position.set(p.x, vrChess.root.position.y + 0.015, p.z);
+                scene.add(dot);
+                vrChess.markers.push(dot);
+            });
+        }
+
+        function setVrChessSquareHighlight(sq) {
+            if (!vrChess) return;
+            if (!sq) {
+                vrChess.highlight.visible = false;
+                return;
+            }
+            const f = 'abcdefgh'.indexOf(sq[0]);
+            const r = Number(sq[1]) - 1;
+            vrChess.highlight.position.set((f - 3.5) * vrChess.sqSize, 0.002, (r - 3.5) * vrChess.sqSize);
+            vrChess.highlight.visible = true;
+        }
+
+        function onVrChessDrop(mesh) {
+            const held = vrChess?.held;
+            if (!held) return;
+            const wp = new THREE.Vector3();
+            mesh.getWorldPosition(wp);
+            const to = nearestSqFromWorld(wp);
+            const from = held.from;
+            const legal = held.moves || [];
+            let moved = false;
+            if (to && legal.includes(to)) {
+                const mv = vrChess.game.move({ from, to, promotion: 'q' });
+                moved = !!mv;
+                if (moved && mpClient && currentGame?.mode === 'pvp') {
+                    mpClient.sendChessMove?.({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' });
+                }
+            }
+            vrChess.held = null;
+            setVrChessMarkers([]);
+            setVrChessSquareHighlight(null);
+            rebuildVrChessPieces();
+            if (!moved) return;
+            if (vrChess.game.isGameOver()) {
+                const score = vrChess.game.isCheckmate() ? 50 : 0;
+                endGame(score);
+                return;
+            }
+            if (vrChess.mode === 'ai' && vrChess.game.turn() === 'b') {
+                setTimeout(() => {
+                    if (!vrChess || vrChess.game.isGameOver()) return;
+                    const moves = vrChess.game.moves({ verbose: true });
+                    if (!moves.length) return endGame(0);
+                    const m = moves[Math.floor(Math.random() * moves.length)];
+                    vrChess.game.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+                    rebuildVrChessPieces();
+                    if (vrChess.game.isGameOver()) {
+                        const score = vrChess.game.isCheckmate() ? 50 : 0;
+                        endGame(score);
+                    }
+                }, 380);
+            }
         }
 
         /* VR sırasında HTML UI'ı gizle/göster */
@@ -639,6 +848,24 @@ applyPlatformDom();
             bkG.position.set(bkPos.x, 0, bkPos.z); bkG.rotation.y = Math.PI * .5;
             scene.add(bkG);
             addSpotMarker(bkPos.x, bkPos.z, '🏀');
+
+            // ── Satranç masası (Yemekhane önü) ─────────────
+            const chPos = SPOTS.find((s) => s.game === 'ch')?.pos;
+            if (chPos) {
+                const ch = new THREE.Group();
+                const table = bx(3.2, 0.14, 3.2, new THREE.MeshLambertMaterial({ color: 0x5a4330 }));
+                table.position.set(0, 1.1, 0);
+                ch.add(table);
+                [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]].forEach(([lx, lz]) => {
+                    ch.add(cl(0.09, 0.11, 1.1, 6, 0x4b3626, lx, 0.55, lz));
+                });
+                const board = bx(2.2, 0.03, 2.2, new THREE.MeshLambertMaterial({ color: 0xe8d9bd }));
+                board.position.set(0, 1.2, 0);
+                ch.add(board);
+                ch.position.set(chPos.x, 0, chPos.z);
+                scene.add(ch);
+                addSpotMarker(chPos.x, chPos.z, '♟️');
+            }
         }
 
         function addSpotMarker(x, z, emoji) {
@@ -1268,6 +1495,25 @@ applyPlatformDom();
                     },
                     onAuthError: (msg) => {
                         console.warn('Multiplayer auth error:', msg);
+                    },
+                    onChessReady: (payload) => {
+                        if (vrChess && currentGame?.mode === 'pvp') {
+                            vrChess.waitingOpponent = false;
+                            vrChess.side = payload?.whiteId === localPlayerId ? 'w' : 'b';
+                        }
+                        if (currentGame?.onChessReady) currentGame.onChessReady(payload);
+                    },
+                    onChessMove: (payload) => {
+                        if (vrChess && currentGame?.mode === 'pvp' && payload?.from && payload?.to) {
+                            vrChess.game.move({ from: payload.from, to: payload.to, promotion: payload.promotion || 'q' });
+                            rebuildVrChessPieces();
+                            if (vrChess.game.isGameOver()) endGame(vrChess.game.isCheckmate() ? 50 : 0);
+                        }
+                        if (currentGame?.onChessMove) currentGame.onChessMove(payload);
+                    },
+                    onChessEnded: () => {
+                        if (vrChess && currentGame?.mode === 'pvp') endGame(0);
+                        if (currentGame?.onChessEnded) currentGame.onChessEnded();
                     }
                 }
             );
@@ -1406,7 +1652,8 @@ applyPlatformDom();
                 });
             }
             const overlay = document.getElementById('game-overlay');
-            overlay.classList.add('active');
+            const isVrChess = type === 'ch' && xrActive;
+            if (!isVrChess) overlay.classList.add('active');
             const canvas = document.getElementById('game-canvas');
             const W = Math.min(IS_MOB ? innerWidth * .98 : 600, innerWidth * .98);
             const H = Math.min(IS_MOB ? innerHeight * .7 : 420, innerHeight * .72);
@@ -1418,8 +1665,28 @@ applyPlatformDom();
             else if (type === 'ft') currentGame = new Penalti(canvas, W, H, endGame);
             else if (type === 'ok') currentGame = new Archery(canvas, W, H, endGame);
             else if (type === 'bk') currentGame = new Basketball(canvas, W, H, endGame);
+            else if (type === 'ch' && !xrActive) {
+                const wantsPvp = confirm('Satranç modu: Rakibe karşı oynamak için Tamam, Bilgisayara karşı için İptal.');
+                const mode = wantsPvp && mpClient ? 'pvp' : 'ai';
+                currentGame = new ChessGame(canvas, W, H, endGame, {
+                    mode,
+                    localPlayerId,
+                    multiplayer: mode === 'pvp' && mpClient
+                        ? {
+                              joinChess: () => mpClient.joinChess?.(),
+                              sendChessMove: (move) => mpClient.sendChessMove?.(move)
+                          }
+                        : null
+                });
+            } else if (type === 'ch' && xrActive) {
+                const wantsPvp = confirm('Satranç modu: Rakibe karşı oynamak için Tamam, Bilgisayara karşı için İptal.');
+                const mode = wantsPvp && mpClient ? 'pvp' : 'ai';
+                currentGame = { mode, destroy() {} };
+                createVrChess(mode);
+                if (mode === 'pvp') mpClient?.joinChess?.();
+            }
 
-            currentGame.start();
+            currentGame?.start?.();
         }
 
         function endGame(score = -1) {
@@ -1432,6 +1699,7 @@ applyPlatformDom();
             }
             if (currentGame) { currentGame.destroy(); currentGame = null; }
             document.getElementById('game-overlay').classList.remove('active');
+            clearVrChess();
             G.gameRunning = false;
             activeSpot = null;
             if (IS_MOB) {

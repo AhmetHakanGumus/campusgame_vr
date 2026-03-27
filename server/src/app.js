@@ -59,6 +59,8 @@ function attachRealtimeServer(httpServer) {
     });
     const ROOM_ID = 'campus-main';
     const players = new Map();
+    const CHESS_ROOM = 'chess-room';
+    const chessMatch = { whiteId: null, blackId: null };
 
     const normalizeUsername = (value) =>
         String(value || '')
@@ -121,6 +123,32 @@ function attachRealtimeServer(httpServer) {
             socket.to(ROOM_ID).emit('player-moved', { ...cur });
         });
 
+        socket.on('chess-join', () => {
+            if (chessMatch.whiteId === socket.id || chessMatch.blackId === socket.id) {
+                socket.join(CHESS_ROOM);
+                socket.emit('chess-ready', { whiteId: chessMatch.whiteId, blackId: chessMatch.blackId });
+                return;
+            }
+            if (!chessMatch.whiteId) chessMatch.whiteId = socket.id;
+            else if (!chessMatch.blackId) chessMatch.blackId = socket.id;
+            else {
+                socket.emit('chess-ended', { message: 'Satranc odasi dolu.' });
+                return;
+            }
+            socket.join(CHESS_ROOM);
+            if (chessMatch.whiteId && chessMatch.blackId) {
+                io.to(CHESS_ROOM).emit('chess-ready', {
+                    whiteId: chessMatch.whiteId,
+                    blackId: chessMatch.blackId
+                });
+            }
+        });
+
+        socket.on('chess-move', (payload = {}) => {
+            if (chessMatch.whiteId !== socket.id && chessMatch.blackId !== socket.id) return;
+            socket.to(CHESS_ROOM).emit('chess-move', payload);
+        });
+
         socket.on('disconnect', () => {
             const hadPlayer = players.has(socket.id);
             if (hadPlayer) {
@@ -129,6 +157,12 @@ function attachRealtimeServer(httpServer) {
             }
             const offlineUsername = markSocketOffline(socket.id);
             if (hadPlayer || offlineUsername) broadcastOnlineUsers();
+
+            if (chessMatch.whiteId === socket.id || chessMatch.blackId === socket.id) {
+                chessMatch.whiteId = null;
+                chessMatch.blackId = null;
+                io.to(CHESS_ROOM).emit('chess-ended', { message: 'Rakip ayrildi.' });
+            }
         });
     });
 }
