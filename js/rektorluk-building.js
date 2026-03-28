@@ -8,6 +8,24 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 const MAX_BUILDING_SOUTH_Z = 37;
 
 const MODEL_BASE = '/models/';
+/** Aynı dosya adı burada veya public/Images/ altında olabilir (logo kapıyla paylaşılabilir). */
+const FALLBACK_TEXTURE_BASES = [MODEL_BASE, '/Images/'];
+
+/**
+ * MTL'de map_Kd yoksa: PNG'yi public/models/ veya public/Images/ içine koy; adı listeden biri olsun.
+ * (İlk bulunan ve yüklenen dosya kullanılır; doku atanmamış tüm MeshPhong yüzeylerine verilir.)
+ */
+const FALLBACK_DIFFUSE_PNG_NAMES = [
+    'harran_universitesi_logo.png',
+    'Rektorluk-binasi.png',
+    'Rektorluk-doku.png',
+    'rektorluk.png',
+    'Rektorluk_texture.png',
+    'texture.png',
+    'diffuse.png',
+    'doku.png'
+];
+
 /** Önce standart isimler; yoksa Blender'ın ürettiği .mtl.obj / .mtl.mtl sonekleri (Vercel/Linux büyük/küçük harf duyarlı). */
 const MODEL_FILE_PAIRS = [
     ['Rektorluk-binasi.mtl', 'Rektorluk-binasi.obj'],
@@ -33,6 +51,34 @@ function loaderErrorMessage(e) {
     return String(e);
 }
 
+/**
+ * MTLLoader MeshPhongMaterial üretir; renk dokuları webde doğru görünsün diye sRGB.
+ * (Normal/alpha haritaları lineer kalır.)
+ */
+function fixTextureEncodingForMtlMaterials(obj) {
+    const sRGB = THREE.sRGBEncoding;
+    const linear = THREE.LinearEncoding;
+    obj.traverse((m) => {
+        if (!m.isMesh) return;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        mats.forEach((mat) => {
+            if (!mat || !mat.isMeshPhongMaterial) return;
+            const setEnc = (tex, enc) => {
+                if (tex && tex.isTexture) {
+                    tex.encoding = enc;
+                    tex.needsUpdate = true;
+                }
+            };
+            setEnc(mat.map, sRGB);
+            setEnc(mat.emissiveMap, sRGB);
+            setEnc(mat.specularMap, sRGB);
+            setEnc(mat.bumpMap, linear);
+            setEnc(mat.alphaMap, linear);
+            mat.needsUpdate = true;
+        });
+    });
+}
+
 function applyShadowsToMeshes(obj, IS_MOB) {
     obj.traverse((m) => {
         if (!m.isMesh) return;
@@ -45,6 +91,80 @@ function applyShadowsToMeshes(obj, IS_MOB) {
             }
         });
     });
+}
+
+function loadTextureOrNull(url) {
+    return new Promise((resolve) => {
+        new THREE.TextureLoader().load(
+            url,
+            (tex) => resolve(tex),
+            undefined,
+            () => resolve(null)
+        );
+    });
+}
+
+/**
+ * MTL'de doku satırı yokken kullanıcı PNG'yi models klasörüne atmışsa: bilinen isimlerden yükle.
+ */
+async function attachFallbackDiffusePng(obj) {
+    let hasMapFromMtl = false;
+    obj.traverse((m) => {
+        if (!m.isMesh || hasMapFromMtl) return;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+            if (mat && mat.map) {
+                hasMapFromMtl = true;
+                return;
+            }
+        }
+    });
+    if (hasMapFromMtl) return;
+
+    for (const fileName of FALLBACK_DIFFUSE_PNG_NAMES) {
+        let tex = null;
+        for (const base of FALLBACK_TEXTURE_BASES) {
+            tex = await loadTextureOrNull(base + fileName);
+            if (tex) break;
+        }
+        if (!tex) continue;
+        tex.encoding = THREE.sRGBEncoding;
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.needsUpdate = true;
+        obj.traverse((m) => {
+            if (!m.isMesh) return;
+            const mats = Array.isArray(m.material) ? m.material : [m.material];
+            mats.forEach((mat) => {
+                if (!mat || !mat.isMeshPhongMaterial || mat.map) return;
+                mat.map = tex;
+                mat.color.setHex(0xffffff);
+                mat.needsUpdate = true;
+            });
+        });
+        console.info(`[Rektörlük] Klasördeki doku kullanıldı: ${fileName}`);
+        return;
+    }
+}
+
+/** Hâlâ hiç doku yoksa uyarı. */
+function warnIfNoDiffuseTextures(obj) {
+    let hasMap = false;
+    obj.traverse((m) => {
+        if (!m.isMesh || hasMap) return;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+            if (mat && mat.map) {
+                hasMap = true;
+                break;
+            }
+        }
+    });
+    if (!hasMap) {
+        console.warn(
+            '[Rektörlük] Doku yok. PNG\'yi public/models/ koyup adını şunlardan biri yap: ' +
+                `${FALLBACK_DIFFUSE_PNG_NAMES.join(', ')} — veya .mtl içine map_Kd satırı ekle (Blender export).`
+        );
+    }
 }
 
 function loadMtlThenObj(mtlFile, objFile) {
@@ -97,6 +217,9 @@ export function addRektorlukBuilding({ scene, IS_MOB, buildingAABBs }) {
         const root = new THREE.Group();
         root.name = 'RektorlukBinasi';
 
+        await attachFallbackDiffusePng(obj);
+        fixTextureEncodingForMtlMaterials(obj);
+        warnIfNoDiffuseTextures(obj);
         applyShadowsToMeshes(obj, IS_MOB);
 
         const box0 = new THREE.Box3().setFromObject(obj);
