@@ -12,6 +12,7 @@ import { ChessGame } from './minigames/chess-game.js';
 import { VrChessStandalone } from './minigames/vr-chess-standalone.js';
 import { G } from './runtime.js';
 import { addUniversityMainGate, updateUniversityGateAnimations } from './university-gate.js';
+import { addRektorlukBuilding } from './rektorluk-building.js';
 import { getLeaderboard, saveScore, getRank } from './api.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { createMultiplayerClient } from './multiplayer.js';
@@ -545,6 +546,7 @@ applyPlatformDom();
 
             // ── Sahne ve oyun objeleri ───────────────────
             buildScene();
+            await addRektorlukBuilding({ scene, IS_MOB, buildingAABBs });
             universityGateRoot = await addUniversityMainGate({ scene, IS_MOB, buildingAABBs });
             addInteractiveObjects();
             createPlayer();
@@ -586,7 +588,7 @@ applyPlatformDom();
             const pm = new THREE.MeshLambertMaterial({ color: 0x9e9e8a });
             [[0, 0, 9, 175], [0, -46, 155, 9], [0, 14, 130, 7], [-28, -70, 7, 50], [28, -70, 7, 50]].forEach(([x, z, w, d]) => addPlane(x, z, w, d, pm, .02));
             addPlane(0, -20, 30, 30, new THREE.MeshLambertMaterial({ color: 0xbfa882 }), .03);
-            BUILDINGS.forEach(addBuilding);
+            BUILDINGS.forEach((b) => { if (b.procedural !== false) addBuilding(b); });
             [[-16, -22], [16, -22], [-16, -33], [16, -33], [-9, -9], [9, -9], [-32, 6], [32, 6], [-22, 44], [22, 44], [0, 50], [-44, -26], [44, -26], [-72, 6], [72, 6], [-26, -74], [26, -74], [0, -37], [-6, -35], [6, -35], [-45, 44], [45, 44], [-20, 58], [20, 58]]
                 .forEach(([x, z]) => addTree(x, z, .85 + Math.random() * .4));
             [[6, 2], [-6, 2], [6, -28], [-6, -28], [6, -58], [-6, -58], [32, -24], [-32, -24], [32, -64], [-32, -64], [0, -2], [0, -50]]
@@ -695,7 +697,7 @@ applyPlatformDom();
             scene.add(bkG);
             addSpotMarker(bkPos.x, bkPos.z, '🏀');
 
-            // ── Satranç masası (Yemekhane önü) ─────────────
+            // ── Satranç masası (Rektörlük önü) ─────────────
             const chPos = SPOTS.find((s) => s.game === 'ch')?.pos;
             if (chPos) {
                 const ch = new THREE.Group();

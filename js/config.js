@@ -21,7 +21,7 @@ export const BUILDINGS = [
     { x: 56, z: -46, w: 29, h: 15, d: 19, color: 0x6a8faf, css: '#6a8faf', name: "Mühendislik Fak." },
     { x: -56, z: 14, w: 25, h: 13, d: 18, color: 0x78a878, css: '#78a878', name: "Fen-Edebiyat Fak." },
     { x: 56, z: 14, w: 25, h: 13, d: 18, color: 0x78a878, css: '#78a878', name: "İktisadi Bilimler" },
-    { x: 0, z: 26, w: 34, h: 8, d: 22, color: 0xd4a96a, css: '#d4a96a', name: "Yemekhane" },
+    { x: 0, z: 26, w: 34, h: 14, d: 22, color: 0xd4a96a, css: '#d4a96a', name: "Rektörlük Binası", procedural: false },
     { x: -80, z: -66, w: 18, h: 22, d: 30, color: 0xa07cb0, css: '#a07cb0', name: "Yurt A" },
     { x: 80, z: -66, w: 18, h: 22, d: 30, color: 0xa07cb0, css: '#a07cb0', name: "Yurt B" },
     { x: -30, z: -87, w: 19, h: 11, d: 15, color: 0x7aaac4, css: '#7aaac4', name: "Spor Salonu (BESYO)" },
@@ -35,7 +35,7 @@ export const SPOTS = [
     { id: 'penalti', icon: '⚽', title: 'Penaltı Atışı', sub: 'BESYO spor alanında', pos: { x: -42, z: -78 }, game: 'ft' },
     { id: 'okculuk', icon: '🏹', title: 'Okçuluk', sub: 'Fen-Edebiyat yanı okçuluk pisti', pos: { x: -70, z: 28 }, game: 'ok' },
     { id: 'basket', icon: '🏀', title: 'Basketbol', sub: 'Yurt A karşısı basketbol sahası', pos: { x: -72, z: -44 }, game: 'bk' },
-    { id: 'satranc', icon: '♟️', title: 'Satranç', sub: 'Yemekhane önündeki satranç alanı', pos: { x: 10, z: 42 }, game: 'ch' }
+    { id: 'satranc', icon: '♟️', title: 'Satranç', sub: 'Rektörlük önündeki satranç alanı', pos: { x: 10, z: 42 }, game: 'ch' }
 ];
 
 export const NPC_COLORS = [0xe74c3c, 0x2ecc71, 0x3498db, 0x9b59b6, 0xe67e22, 0x1abc9c, 0xf39c12, 0x27ae60, 0xe91e63, 0x00bcd4, 0xff5722, 0x607d8b];
