@@ -8,23 +8,6 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 const MAX_BUILDING_SOUTH_Z = 37;
 
 const MODEL_BASE = '/models/';
-/** Aynı dosya adı burada veya public/Images/ altında olabilir (logo kapıyla paylaşılabilir). */
-const FALLBACK_TEXTURE_BASES = [MODEL_BASE, '/Images/'];
-
-/**
- * MTL'de map_Kd yoksa: PNG'yi public/models/ veya public/Images/ içine koy; adı listeden biri olsun.
- * (İlk bulunan ve yüklenen dosya kullanılır; doku atanmamış tüm MeshPhong yüzeylerine verilir.)
- */
-const FALLBACK_DIFFUSE_PNG_NAMES = [
-    'harran_universitesi_logo.png',
-    'Rektorluk-binasi.png',
-    'Rektorluk-doku.png',
-    'rektorluk.png',
-    'Rektorluk_texture.png',
-    'texture.png',
-    'diffuse.png',
-    'doku.png'
-];
 
 /** Önce standart isimler; yoksa Blender'ın ürettiği .mtl.obj / .mtl.mtl sonekleri (Vercel/Linux büyük/küçük harf duyarlı). */
 const MODEL_FILE_PAIRS = [
@@ -93,60 +76,7 @@ function applyShadowsToMeshes(obj, IS_MOB) {
     });
 }
 
-function loadTextureOrNull(url) {
-    return new Promise((resolve) => {
-        new THREE.TextureLoader().load(
-            url,
-            (tex) => resolve(tex),
-            undefined,
-            () => resolve(null)
-        );
-    });
-}
-
-/**
- * MTL'de doku satırı yokken kullanıcı PNG'yi models klasörüne atmışsa: bilinen isimlerden yükle.
- */
-async function attachFallbackDiffusePng(obj) {
-    let hasMapFromMtl = false;
-    obj.traverse((m) => {
-        if (!m.isMesh || hasMapFromMtl) return;
-        const mats = Array.isArray(m.material) ? m.material : [m.material];
-        for (const mat of mats) {
-            if (mat && mat.map) {
-                hasMapFromMtl = true;
-                return;
-            }
-        }
-    });
-    if (hasMapFromMtl) return;
-
-    for (const fileName of FALLBACK_DIFFUSE_PNG_NAMES) {
-        let tex = null;
-        for (const base of FALLBACK_TEXTURE_BASES) {
-            tex = await loadTextureOrNull(base + fileName);
-            if (tex) break;
-        }
-        if (!tex) continue;
-        tex.encoding = THREE.sRGBEncoding;
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        tex.needsUpdate = true;
-        obj.traverse((m) => {
-            if (!m.isMesh) return;
-            const mats = Array.isArray(m.material) ? m.material : [m.material];
-            mats.forEach((mat) => {
-                if (!mat || !mat.isMeshPhongMaterial || mat.map) return;
-                mat.map = tex;
-                mat.color.setHex(0xffffff);
-                mat.needsUpdate = true;
-            });
-        });
-        console.info(`[Rektörlük] Klasördeki doku kullanıldı: ${fileName}`);
-        return;
-    }
-}
-
-/** Hâlâ hiç doku yoksa uyarı. */
+/** MTL'de map_Kd yoksa (Blender export eksik) — kod ekstra doku uygulamaz. */
 function warnIfNoDiffuseTextures(obj) {
     let hasMap = false;
     obj.traverse((m) => {
@@ -161,8 +91,7 @@ function warnIfNoDiffuseTextures(obj) {
     });
     if (!hasMap) {
         console.warn(
-            '[Rektörlük] Doku yok. PNG\'yi public/models/ koyup adını şunlardan biri yap: ' +
-                `${FALLBACK_DIFFUSE_PNG_NAMES.join(', ')} — veya .mtl içine map_Kd satırı ekle (Blender export).`
+            '[Rektörlük] Yüzeyde doku (map) yok. Blender’dan OBJ+MTL export edin; PNG’ler public/models/ içinde olsun; .mtl içinde map_Kd satırları görünsün.'
         );
     }
 }
@@ -217,7 +146,6 @@ export function addRektorlukBuilding({ scene, IS_MOB, buildingAABBs }) {
         const root = new THREE.Group();
         root.name = 'RektorlukBinasi';
 
-        await attachFallbackDiffusePng(obj);
         fixTextureEncodingForMtlMaterials(obj);
         warnIfNoDiffuseTextures(obj);
         applyShadowsToMeshes(obj, IS_MOB);
