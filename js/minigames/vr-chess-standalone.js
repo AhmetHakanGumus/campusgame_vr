@@ -317,8 +317,15 @@ function createPieceModel(type, color, whitePieceMat, blackPieceMat) {
 }
 
 export class VrChessStandalone {
-    constructor({ xrRig, onEnd }) {
-        this.xrRig = xrRig;
+    /**
+     * @param {object} opts
+     * @param {import('three').Scene} opts.scene
+     * @param {{ x: number, y: number, z: number, yaw?: number }} opts.anchor — tahta merkezi (dünya); yaw opsiyonel (rad)
+     * @param {(score: number) => void} opts.onEnd
+     */
+    constructor({ scene, anchor, onEnd }) {
+        this.scene = scene;
+        this.anchor = anchor;
         this.onEnd = onEnd;
         this.chess = new ChessEngine();
         this.pieceMeshes = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -500,10 +507,11 @@ export class VrChessStandalone {
     }
 
     mount() {
-        this.root.position.set(0, 0.92, -1.12);
+        const a = this.anchor;
+        this.root.position.set(a.x, a.y, a.z);
         this.root.scale.setScalar(0.17);
-        this.root.rotation.y = 0;
-        this.xrRig.add(this.root);
+        this.root.rotation.y = a.yaw ?? 0;
+        this.scene.add(this.root);
     }
 
     dispose() {

@@ -1682,10 +1682,16 @@ applyPlatformDom();
                 const mode = options.mode || 'local';
                 try {
                     clearVrChess();
-                    if (!xrRig) throw new Error('XR rig yok');
+                    const chSpot = SPOTS.find((s) => s.game === 'ch')?.pos || { x: 10, z: 42 };
                     currentGame = { mode, destroy() {} };
                     vrChessStandalone = new VrChessStandalone({
-                        xrRig,
+                        scene,
+                        anchor: {
+                            x: chSpot.x,
+                            y: 1.25,
+                            z: chSpot.z,
+                            yaw: 0
+                        },
                         onEnd: (sc) => endGame(sc)
                     });
                     vrChessStandalone.mount();
