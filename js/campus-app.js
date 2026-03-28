@@ -1745,6 +1745,20 @@ applyPlatformDom();
 
         let campusStarted = false;
 
+        function formatStartupError(err) {
+            if (err == null) return 'Bilinmeyen hata';
+            if (typeof err === 'string') return err;
+            if (err instanceof Error && err.message) return err.message;
+            if (err.message) return String(err.message);
+            const t = err.target;
+            if (t && typeof t.status === 'number') {
+                const u = t.responseURL || '';
+                if (t.status === 404) return `Kaynak bulunamadı (404): ${u || 'dosya'}`;
+                return `HTTP ${t.status} ${t.statusText || ''} ${u}`.trim();
+            }
+            return String(err);
+        }
+
         export async function startCampusExperience(username = 'Oyuncu', sessionToken = '') {
             if (campusStarted) return;
             campusStarted = true;
@@ -1771,7 +1785,7 @@ applyPlatformDom();
                 campusStarted = false;
                 console.error('Oyun başlatma hatası:', err);
                 document.getElementById('welcome').style.display = 'flex';
-                alert('Oyun başlatılırken hata oluştu: ' + err.message);
+                alert('Oyun başlatılırken hata oluştu: ' + formatStartupError(err));
             }
         }
 
